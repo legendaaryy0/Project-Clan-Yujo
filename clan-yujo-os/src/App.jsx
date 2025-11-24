@@ -7,7 +7,7 @@ import {
   MessageCircle, Vote, BarChart2, PlayCircle, Wifi, WifiOff, Zap, Hexagon, 
   Menu, X, Grid, MoreVertical, ChevronRight, Image as ImageIcon, Upload, 
   Layers, Briefcase, MapPin, CalendarDays, CheckSquare, Flag, ArrowLeft, 
-  AlertTriangle, MessageSquareCode, Minimize2, Command
+  AlertTriangle, MessageSquareCode, Minimize2, Command, Megaphone, HardDrive
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -40,9 +40,10 @@ const COLLECTION_REQUESTS = 'requests';
 const COLLECTION_SCREENINGS = 'screenings'; 
 const COLLECTION_POLLS = 'polls'; 
 const COLLECTION_MESSAGES = 'messages'; 
+const COLLECTION_ANNOUNCEMENTS = 'announcements';
 
-const ADMIN_CODE = "AKIRA2025";  
-const STAFF_CODE = "MINATO2025"; 
+const ADMIN_CODE = "VIVID2025";  
+const STAFF_CODE = "ACTION2025"; 
 const LOGO_URL = "/logo.jpeg"; 
 
 const PRE_PROD_ROLES = {
@@ -98,7 +99,20 @@ const generatePassword = () => {
 const GlobalChat = ({ currentUser, onClose }) => {
   const [msgText, setMsgText] = useState('');
   const [messages, setMessages] = useState([]);
+  const [isSending, setIsSending] = useState(false);
   const scrollRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [onClose]);
 
   useEffect(() => {
     const q = query(collection(db, COLLECTION_MESSAGES), limit(50));
@@ -111,17 +125,44 @@ const GlobalChat = ({ currentUser, onClose }) => {
     return () => unsub();
   }, []);
 
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onloadend = () => sendImageMessage(reader.result);
+        reader.readAsDataURL(file);
+    }
+  };
+
+  const sendImageMessage = async (base64Image) => {
+      setIsSending(true);
+      try {
+        await addDoc(collection(db, COLLECTION_MESSAGES), {
+            image: base64Image,
+            uid: currentUser.uid,
+            displayName: currentUser.displayName,
+            avatar: currentUser.avatar,
+            createdAt: serverTimestamp()
+        });
+      } catch(err) { console.error(err); }
+      finally { setIsSending(false); }
+  };
+
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!msgText.trim()) return;
-    await addDoc(collection(db, COLLECTION_MESSAGES), {
-      text: msgText, uid: currentUser.uid, displayName: currentUser.displayName, avatar: currentUser.avatar, createdAt: serverTimestamp()
-    });
-    setMsgText('');
+    setIsSending(true);
+    try {
+        await addDoc(collection(db, COLLECTION_MESSAGES), {
+          text: msgText, uid: currentUser.uid, displayName: currentUser.displayName, avatar: currentUser.avatar, createdAt: serverTimestamp()
+        });
+        setMsgText('');
+    } catch (err) { console.error(err); } 
+    finally { setIsSending(false); }
   };
 
   return (
-    <div className="fixed bottom-28 right-4 md:right-8 z-50 w-[calc(100vw-2rem)] md:w-96 h-[500px] flex flex-col animate-in slide-in-from-bottom-10 zoom-in-95 duration-300 shadow-2xl shadow-black/80 rounded-3xl border border-zinc-700 overflow-hidden bg-zinc-900/95 backdrop-blur-xl">
+    <div ref={containerRef} className="fixed bottom-32 right-4 md:right-8 z-[60] w-[calc(100vw-2rem)] md:w-96 h-[500px] flex flex-col animate-in slide-in-from-bottom-10 zoom-in-95 duration-300 shadow-2xl shadow-black/80 rounded-3xl border border-zinc-700 overflow-hidden bg-zinc-900/95 backdrop-blur-xl">
       <div className="bg-zinc-950 border-b border-zinc-800 p-4 flex justify-between items-center">
            <div className="flex items-center gap-2">
                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
@@ -135,24 +176,46 @@ const GlobalChat = ({ currentUser, onClose }) => {
              const isMe = msg.uid === currentUser.uid;
              return (
                <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
-                  <img src={msg.avatar} className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 object-cover"/>
-                  <div className={`max-w-[80%] p-3 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-emerald-700 text-white rounded-tr-sm' : 'bg-zinc-800 text-zinc-200 rounded-tl-sm'}`}>
+                  <img src={msg.avatar} className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 object-cover flex-shrink-0"/>
+                  <div className={`max-w-[75%] p-3 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-emerald-700 text-white rounded-tr-sm' : 'bg-zinc-800 text-zinc-200 rounded-tl-sm'}`}>
                      {!isMe && <p className="text-[10px] font-bold text-zinc-400 mb-1">{msg.displayName}</p>}
-                     <p className="leading-snug">{msg.text}</p>
+                     {msg.image ? (
+                         <img src={msg.image} className="rounded-lg w-full h-auto border border-white/10" />
+                     ) : (
+                         <p className="leading-snug break-words">{msg.text}</p>
+                     )}
                   </div>
                </div>
              )
            })}
       </div>
-      <form onSubmit={sendMessage} className="p-3 bg-zinc-950 border-t border-zinc-800 flex gap-2">
+      <form onSubmit={sendMessage} className="p-3 bg-zinc-950 border-t border-zinc-800 flex gap-2 items-center">
+           <button type="button" onClick={() => fileInputRef.current.click()} className="text-zinc-400 hover:text-white p-2"><ImageIcon size={20}/></button>
+           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload}/>
            <input autoFocus className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white text-sm focus:border-emerald-500 outline-none" placeholder="Message..." value={msgText} onChange={e => setMsgText(e.target.value)}/>
-           <button className="bg-emerald-600 text-white p-3 rounded-xl"><Send size={18}/></button>
+           <button disabled={isSending} className="bg-emerald-600 text-white p-3 rounded-xl"><Send size={18}/></button>
       </form>
     </div>
   );
 };
 
-// LOGIN
+const AnnouncementsWidget = ({ announcements, isAdmin, logActivity }) => {
+    const [text, setText] = useState('');
+    const postAnnouncement = async (e) => { e.preventDefault(); if(!text) return; await addDoc(collection(db, COLLECTION_ANNOUNCEMENTS), { text, createdAt: serverTimestamp(), active: true }); logActivity('Posted announcement'); setText(''); };
+    const deleteAnnounce = async (id) => { await deleteDoc(doc(db, COLLECTION_ANNOUNCEMENTS, id)); };
+    const latest = announcements && announcements.length > 0 ? announcements[0] : null;
+    return (
+        <div className="bg-gradient-to-r from-indigo-900/50 to-purple-900/50 border border-indigo-500/30 p-6 rounded-3xl mb-8 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10"><Megaphone size={100} className="text-white"/></div>
+            <div className="relative z-10">
+                <h3 className="text-indigo-300 font-black uppercase tracking-widest text-xs mb-2 flex items-center gap-2"><Megaphone size={14}/> HQ Broadcast</h3>
+                {latest ? (<div className="flex justify-between items-start"><p className="text-white text-lg md:text-2xl font-bold leading-tight max-w-2xl">"{latest.text}"</p>{isAdmin && <button onClick={() => deleteAnnounce(latest.id)} className="text-zinc-500 hover:text-red-400"><Trash2 size={16}/></button>}</div>) : <p className="text-zinc-500 italic">No active broadcasts.</p>}
+                {isAdmin && (<form onSubmit={postAnnouncement} className="mt-6 flex gap-2"><input className="flex-1 bg-black/30 border border-indigo-500/30 rounded-xl px-4 py-2 text-sm text-white placeholder:text-indigo-300/50 focus:border-indigo-400 outline-none" placeholder="New Announcement..." value={text} onChange={e => setText(e.target.value)} /><button className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase">Post</button></form>)}
+            </div>
+        </div>
+    );
+};
+
 const LoginScreen = ({ onLogin, isAuthReady }) => {
   const [mode, setMode] = useState('login'); 
   const [loginCreds, setLoginCreds] = useState({ username: '', password: '' });
@@ -231,7 +294,7 @@ const LoginScreen = ({ onLogin, isAuthReady }) => {
             {LOGO_URL ? <img src={LOGO_URL} alt="Clan Yujo" className="w-full h-full object-cover"/> : <Hexagon className="text-white w-10 h-10" />}
           </div>
           <h1 className="text-4xl font-black text-white tracking-tighter mb-2">CLAN YUJO</h1>
-          <p className="text-zinc-400 text-sm uppercase tracking-widest">Production OS v4.0</p>
+          <p className="text-zinc-400 text-sm uppercase tracking-widest">Production OS v5.3</p>
         </div>
         <div className={`flex justify-center mb-6 text-xs font-bold ${isAuthReady ? 'text-emerald-500' : 'text-amber-500 animate-pulse'}`}>
              {isAuthReady ? <span className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20"><Wifi size={12}/> SYSTEMS ONLINE</span> : <span className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 rounded-full border border-amber-500/20"><RefreshCw size={12} className="animate-spin"/> ESTABLISHING LINK...</span>}
@@ -260,18 +323,27 @@ const LoginScreen = ({ onLogin, isAuthReady }) => {
   );
 };
 
-// MOVIE MANAGER
 const MovieNightAdmin = ({ logActivity }) => {
   const [movie, setMovie] = useState({ title: '', date: '', time: '', desc: '', image: '' });
   const [pollQ, setPollQ] = useState('');
   const [pollOptions, setPollOptions] = useState(['', '']);
+  const [saveStatus, setSaveStatus] = useState('idle'); 
   const fileInputRef = useRef(null);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) { const reader = new FileReader(); reader.onloadend = () => setMovie(prev => ({ ...prev, image: reader.result })); reader.readAsDataURL(file); }
   };
-  const handleUpdateMovie = async (e) => { e.preventDefault(); const formattedTime = `${movie.date} @ ${movie.time}`; await addDoc(collection(db, COLLECTION_SCREENINGS), { ...movie, time: formattedTime, createdAt: serverTimestamp() }); logActivity(`Updated Movie: ${movie.title}`); setMovie({ title: '', date: '', time: '', desc: '', image: '' }); alert("Published!"); };
+  const handleUpdateMovie = async (e) => { 
+      e.preventDefault(); 
+      setSaveStatus('saving');
+      const formattedTime = `${movie.date} @ ${movie.time}`; 
+      await addDoc(collection(db, COLLECTION_SCREENINGS), { ...movie, time: formattedTime, createdAt: serverTimestamp() }); 
+      logActivity(`Updated Movie: ${movie.title}`); 
+      setMovie({ title: '', date: '', time: '', desc: '', image: '' }); 
+      setSaveStatus('success');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+  };
   const handleLaunchPoll = async (e) => { e.preventDefault(); const validOptions = pollOptions.filter(o => o.trim() !== '').map(text => ({ text, votes: 0 })); await addDoc(collection(db, COLLECTION_POLLS), { question: pollQ, options: validOptions, votedBy: [], status: 'active', createdAt: serverTimestamp() }); logActivity(`Launched poll`); setPollQ(''); setPollOptions(['', '']); alert("Live!"); };
 
   return (
@@ -291,7 +363,7 @@ const MovieNightAdmin = ({ logActivity }) => {
             </div>
             <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
             <textarea className="w-full bg-black/50 border border-zinc-700 rounded-xl p-4 text-white h-32 focus:border-purple-500 outline-none" placeholder="Hype Text..." value={movie.desc} onChange={e=>setMovie({...movie, desc: e.target.value})} required/>
-            <button className="w-full bg-white text-black font-bold py-4 rounded-xl hover:bg-purple-50 transition uppercase tracking-wider">Broadcast Signal</button>
+            <button disabled={saveStatus !== 'idle'} className={`w-full font-bold py-4 rounded-xl transition uppercase tracking-wider flex items-center justify-center gap-2 ${saveStatus === 'success' ? 'bg-green-600 text-white' : 'bg-white text-black hover:bg-purple-50'}`}>{saveStatus === 'success' ? <><CheckCircle size={18}/> PUBLISHED SUCCESSFULLY</> : (saveStatus === 'saving' ? 'BROADCASTING...' : 'BROADCAST SIGNAL')}</button>
          </form>
       </div>
       <div className="bg-zinc-900/50 p-8 rounded-3xl border border-zinc-800 backdrop-blur-sm">
@@ -307,7 +379,6 @@ const MovieNightAdmin = ({ logActivity }) => {
   );
 };
 
-// DASHBOARD WIDGETS
 const MovieDisplayWidget = ({ screening }) => {
   if (!screening) return <div className="bg-zinc-900/30 rounded-3xl border border-dashed border-zinc-800 p-10 text-center text-zinc-600 h-full flex flex-col items-center justify-center"><Film size={64} className="mx-auto mb-4 opacity-20"/><p className="font-bold tracking-widest text-sm">NO SIGNAL</p></div>;
   const bgImage = screening.image || `https://source.unsplash.com/random/800x600/?cinema,movie,dark`;
@@ -344,8 +415,7 @@ const PollWidget = ({ poll, currentUser, logActivity }) => {
   );
 };
 
-// PROJECT TRACKER (FIXED ROLE FETCHING)
-const ProjectTracker = ({ projects, users, isAdmin, logActivity }) => {
+const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser }) => {
   const [view, setView] = useState('list'); 
   const [selectedProject, setSelectedProject] = useState(null);
   const [newProj, setNewProj] = useState({ title: '', type: 'Production', startDate: '', endDate: '', callTime: '', callLocation: '', assignments: {} });
@@ -358,18 +428,29 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity }) => {
   };
   
   const currentRoles = getRolesForType(newProj.type);
-
   const calculateProgress = (start, end) => { if (!start || !end) return 0; const now = new Date().getTime(); const s = new Date(start).getTime(); const e = new Date(end).getTime(); if (now < s) return 0; if (now > e) return 100; return Math.round(((now - s) / (e - s)) * 100); };
-  const handleCreate = async (e) => { e.preventDefault(); await addDoc(collection(db, COLLECTION_PROJECTS), { ...newProj, progress: 0, status: 'Active', setbacks: [], createdAt: serverTimestamp() }); logActivity(`Initiated Operation: ${newProj.title}`); setView('list'); setNewProj({ title: '', type: 'Production', startDate: '', endDate: '', callTime: '', callLocation: '', assignments: {} }); };
+  const handleCreate = async (e) => { e.preventDefault(); await addDoc(collection(db, COLLECTION_PROJECTS), { ...newProj, progress: 0, status: 'Active', setbacks: [], dataLogs: [], createdAt: serverTimestamp() }); logActivity(`Initiated Operation: ${newProj.title}`); setView('list'); setNewProj({ title: '', type: 'Production', startDate: '', endDate: '', callTime: '', callLocation: '', assignments: {} }); };
   const handleAddSetback = async (text, project) => { const newSetback = { id: Date.now(), text, date: new Date().toISOString(), status: 'Active' }; const updatedSetbacks = [...(project.setbacks || []), newSetback]; await updateDoc(doc(db, COLLECTION_PROJECTS, project.id), { setbacks: updatedSetbacks }); logActivity(`Reported setback in ${project.title}`); };
 
+  const handleAddDataLog = async (e, project) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const newLog = { id: Date.now(), cardId: formData.get('cardId'), location: formData.get('location'), notes: formData.get('notes'), copiedBy: currentUser.displayName, timestamp: new Date().toISOString() };
+      const updatedLogs = [...(project.dataLogs || []), newLog];
+      await updateDoc(doc(db, COLLECTION_PROJECTS, project.id), { dataLogs: updatedLogs });
+      e.target.reset();
+  };
+  // Setback Success Feedback
+  const [setbackSuccess, setSetbackSuccess] = useState(false);
+  const onSetbackSubmit = async (e, project) => { e.preventDefault(); await handleAddSetback(e.target.setback.value, project); e.target.reset(); setSetbackSuccess(true); setTimeout(() => setSetbackSuccess(false), 2000); };
+
   if (view === 'create') return (
-    <div className="bg-zinc-900 p-8 rounded-3xl border border-zinc-800 animate-in fade-in zoom-in-95">
-       <div className="flex items-center gap-4 mb-8 border-b border-zinc-800 pb-6"><button onClick={() => setView('list')} className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition"><ArrowLeft size={20} /></button><h2 className="text-2xl font-black text-white uppercase tracking-wide">Initialize Mission</h2></div>
+    <div className="bg-zinc-900 p-6 md:p-8 rounded-3xl border border-zinc-800 animate-in fade-in zoom-in-95">
+       <div className="flex items-center gap-4 mb-8 border-b border-zinc-800 pb-6"><button onClick={() => setView('list')} className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition"><ArrowLeft size={20} /></button><h2 className="text-xl md:text-2xl font-black text-white uppercase tracking-wide">Initialize Mission</h2></div>
        <form onSubmit={handleCreate} className="space-y-8 max-w-4xl">
           <div className="space-y-4">
-             <input className="w-full bg-black p-4 rounded-xl border border-zinc-800 text-white focus:border-white outline-none text-lg font-bold" placeholder="Operation Name (e.g. Summer Campaign)" value={newProj.title} onChange={e=>setNewProj({...newProj, title: e.target.value})} required />
-             <div className="grid grid-cols-3 gap-2">{['Pre-Production', 'Production', 'Post-Production'].map(type => (<button type="button" key={type} onClick={() => setNewProj({...newProj, type, assignments: {}})} className={`p-3 rounded-xl border-2 text-xs font-bold uppercase tracking-widest transition ${newProj.type === type ? 'bg-emerald-900/20 border-emerald-500 text-emerald-400' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>{type}</button>))}</div>
+             <input className="w-full bg-black p-4 rounded-xl border border-zinc-800 text-white focus:border-white outline-none text-lg font-bold" placeholder="Operation Name" value={newProj.title} onChange={e=>setNewProj({...newProj, title: e.target.value})} required />
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">{['Pre-Production', 'Production', 'Post-Production'].map(type => (<button type="button" key={type} onClick={() => setNewProj({...newProj, type, assignments: {}})} className={`p-3 rounded-xl border-2 text-[10px] md:text-xs font-bold uppercase tracking-widest transition ${newProj.type === type ? 'bg-emerald-900/20 border-emerald-500 text-emerald-400' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>{type}</button>))}</div>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800"><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Mission Timeline</label><div className="flex gap-2"><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">Start</span><input type="date" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" value={newProj.startDate} onChange={e=>setNewProj({...newProj, startDate: e.target.value})} required /></div><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">End</span><input type="date" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" value={newProj.endDate} onChange={e=>setNewProj({...newProj, endDate: e.target.value})} required /></div></div></div>
                  <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800"><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Call Details</label><div className="flex gap-2"><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">Call Time</span><input type="time" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" value={newProj.callTime} onChange={e=>setNewProj({...newProj, callTime: e.target.value})} required /></div><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">Location</span><input type="text" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" placeholder="e.g. Studio A" value={newProj.callLocation} onChange={e=>setNewProj({...newProj, callLocation: e.target.value})} required /></div></div></div>
@@ -383,13 +464,53 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity }) => {
 
   if (view === 'details' && selectedProject) {
       const calculatedProgress = calculateProgress(selectedProject.startDate, selectedProject.endDate);
+      const isAssignedToProject = Object.values(selectedProject.assignments || {}).includes(currentUser.uid);
+      
       return (
       <div className="space-y-8 animate-in slide-in-from-right-10">
-          <div className="flex items-center gap-4 mb-6"><button onClick={() => setView('list')} className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition"><ArrowLeft size={20} /></button><div><h2 className="text-3xl font-black text-white uppercase">{selectedProject.title}</h2><div className="flex gap-3 mt-1 text-xs font-mono text-zinc-400"><span className="flex items-center gap-1"><MapPin size={12} className="text-emerald-500"/> {selectedProject.callLocation}</span><span className="flex items-center gap-1"><Clock size={12} className="text-purple-500"/> Call: {selectedProject.callTime}</span><span className="bg-zinc-800 px-2 rounded border border-zinc-700 text-white">{selectedProject.type}</span></div></div></div>
+          <div className="flex flex-col md:flex-row md:items-center gap-4 mb-6">
+            <button onClick={() => setView('list')} className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition w-fit"><ArrowLeft size={20} /></button>
+            <div><h2 className="text-2xl md:text-3xl font-black text-white uppercase break-words">{selectedProject.title}</h2><div className="flex flex-wrap gap-3 mt-1 text-xs font-mono text-zinc-400"><span className="flex items-center gap-1"><MapPin size={12} className="text-emerald-500"/> {selectedProject.callLocation}</span><span className="flex items-center gap-1"><Clock size={12} className="text-purple-500"/> Call: {selectedProject.callTime}</span><span className="bg-zinc-800 px-2 rounded border border-zinc-700 text-white whitespace-nowrap">{selectedProject.type}</span></div></div>
+          </div>
           <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800"><div className="flex justify-between text-xs font-bold text-zinc-400 uppercase mb-2"><span>Timeline Progress (Auto)</span><span>{calculatedProgress}%</span></div><div className="w-full bg-black h-4 rounded-full overflow-hidden border border-zinc-800 relative"><div className="bg-gradient-to-r from-emerald-500 to-blue-500 h-full transition-all duration-500" style={{ width: `${calculatedProgress}%` }}></div>{[25, 50, 75].map(p => <div key={p} className="absolute top-0 bottom-0 w-px bg-black/30" style={{left: `${p}%`}}></div>)}</div></div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800"><h3 className="text-white font-bold flex items-center gap-2 mb-4"><Users className="text-purple-500"/> Assigned Crew</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{Object.entries(selectedProject.assignments || {}).map(([role, uid]) => { const user = users.find(u => u.uid === uid); if (!uid) return null; return (<div key={role} className="flex items-center gap-3 p-2 bg-black/40 rounded-lg border border-zinc-800"><div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden"><img src={user?.avatar} className="w-full h-full object-cover"/></div><div><p className="text-[10px] font-bold text-zinc-500 uppercase">{role}</p><p className="text-sm text-white font-bold">{user?.displayName || 'Unknown'}</p></div></div>) })}</div></div>
-              <div className="bg-red-900/10 p-6 rounded-2xl border border-red-500/20"><h3 className="text-red-400 font-bold flex items-center gap-2 mb-4"><AlertTriangle size={16}/> Setbacks & Blockers</h3><div className="space-y-2 mb-4 max-h-64 overflow-y-auto custom-scrollbar pr-2">{(selectedProject.setbacks || []).map((sb, idx) => (<div key={idx} className="p-3 bg-black/40 rounded-lg border border-red-500/10"><p className="text-sm text-white font-medium">{sb.text}</p><p className="text-[10px] text-zinc-500 mt-1">{new Date(sb.date).toLocaleDateString()}</p></div>))}{(!selectedProject.setbacks || selectedProject.setbacks.length === 0) && <p className="text-zinc-600 text-sm italic text-center py-4">Operation smooth.</p>}</div>{isAdmin && (<form onSubmit={(e) => { e.preventDefault(); handleAddSetback(e.target.setback.value, selectedProject); e.target.reset(); }} className="flex gap-2"><input name="setback" className="flex-1 bg-zinc-950 border border-red-900/30 rounded p-2 text-xs text-white focus:border-red-500 outline-none" placeholder="Report Issue..." required/><button className="bg-red-600 text-white rounded px-3 flex items-center justify-center"><Plus size={14}/></button></form>)}</div>
+              <div className="lg:col-span-2 space-y-8">
+                 <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800"><h3 className="text-white font-bold flex items-center gap-2 mb-4"><Users className="text-purple-500"/> Assigned Crew</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{Object.entries(selectedProject.assignments || {}).map(([role, uid]) => { const user = users.find(u => u.uid === uid); if (!uid) return null; return (<div key={role} className="flex items-center gap-3 p-2 bg-black/40 rounded-lg border border-zinc-800"><div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0"><img src={user?.avatar} className="w-full h-full object-cover"/></div><div><p className="text-[10px] font-bold text-zinc-500 uppercase">{role}</p><p className="text-sm text-white font-bold">{user?.displayName || 'Unknown'}</p></div></div>) })}</div></div>
+                 
+                 <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800">
+                    <h3 className="text-white font-bold flex items-center gap-2 mb-4"><HardDrive className="text-blue-500"/> Footage & Data Logs</h3>
+                    <div className="space-y-2 mb-4 max-h-64 overflow-y-auto custom-scrollbar pr-2">
+                        {(selectedProject.dataLogs || []).map(log => (
+                            <div key={log.id} className="p-3 bg-black/40 rounded-lg border border-blue-900/30 flex justify-between items-center">
+                                <div><p className="text-sm font-bold text-white flex items-center gap-2"><CheckCircle size={12} className="text-emerald-500"/> {log.cardId} → {log.location}</p><p className="text-xs text-zinc-500">{log.notes}</p></div>
+                                <div className="text-right"><span className="block text-[10px] font-bold text-blue-400">{log.copiedBy}</span><span className="text-[10px] font-mono text-zinc-600">{new Date(log.timestamp).toLocaleDateString()}</span></div>
+                            </div>
+                        ))}
+                        {(!selectedProject.dataLogs || selectedProject.dataLogs.length === 0) && <p className="text-zinc-600 text-sm italic">No data dumps logged.</p>}
+                    </div>
+                    {/* DATA LOG FORM: Locked for non-assigned crew */}
+                    {(isAssignedToProject || isAdmin) ? (
+                        <form onSubmit={(e) => handleAddDataLog(e, selectedProject)} className="grid grid-cols-12 gap-2 pt-2 border-t border-zinc-800">
+                            <input name="cardId" className="col-span-3 bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-white" placeholder="Card A01" required/>
+                            <input name="location" className="col-span-4 bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-white" placeholder="Drive Name" required/>
+                            <input name="notes" className="col-span-4 bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-white" placeholder="Notes..."/>
+                            <button className="col-span-1 bg-blue-600 text-white rounded flex items-center justify-center"><Save size={14}/></button>
+                        </form>
+                    ) : (
+                        <div className="pt-2 border-t border-zinc-800 text-center text-xs text-zinc-500 italic"><Lock size={12} className="inline mr-1"/> Only assigned crew can log footage.</div>
+                    )}
+                 </div>
+              </div>
+
+              <div className="bg-red-900/10 p-6 rounded-2xl border border-red-500/20"><h3 className="text-red-400 font-bold flex items-center gap-2 mb-4"><AlertTriangle size={16}/> Setbacks & Blockers</h3><div className="space-y-2 mb-4 max-h-64 overflow-y-auto custom-scrollbar pr-2">{(selectedProject.setbacks || []).map((sb, idx) => (<div key={idx} className="p-3 bg-black/40 rounded-lg border border-red-500/10"><p className="text-sm text-white font-medium">{sb.text}</p><p className="text-[10px] text-zinc-500 mt-1">{new Date(sb.date).toLocaleDateString()}</p></div>))}{(!selectedProject.setbacks || selectedProject.setbacks.length === 0) && <p className="text-zinc-600 text-sm italic text-center py-4">Operation smooth.</p>}</div>
+                 {isAdmin && (
+                     <form onSubmit={(e) => onSetbackSubmit(e, selectedProject)} className="flex gap-2">
+                         <input name="setback" className="flex-1 bg-zinc-950 border border-red-900/30 rounded p-2 text-xs text-white focus:border-red-500 outline-none" placeholder="Report Issue..." required/>
+                         <button className={`rounded px-3 flex items-center justify-center transition-all ${setbackSuccess ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{setbackSuccess ? <CheckCircle size={14}/> : <Plus size={14}/>}</button>
+                     </form>
+                 )}
+              </div>
           </div>
       </div>
   );
@@ -399,66 +520,6 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity }) => {
     <div className="space-y-8 animate-in fade-in">
        <div className="flex justify-between items-center"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Briefcase className="text-amber-500"/> MISSION LOG</h2>{isAdmin && <button onClick={()=>setView('create')} className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition flex items-center gap-2"><Plus size={16}/> New Op</button>}</div>
        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">{projects.map(p => { const progress = calculateProgress(p.startDate, p.endDate); return (<div key={p.id} onClick={() => { setSelectedProject(p); setView('details'); }} className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 hover:border-zinc-600 transition cursor-pointer group relative overflow-hidden"><div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition"><Film size={100} /></div><div className="relative z-10"><div className="flex justify-between mb-4"><span className="text-[10px] font-black uppercase px-2 py-1 rounded bg-purple-900/30 text-purple-400">{p.type}</span><span className="text-zinc-500 text-xs font-mono">{progress}% Timeline</span></div><h3 className="text-2xl font-bold text-white mb-2">{p.title}</h3><div className="flex items-center gap-4 text-zinc-400 text-xs font-mono mb-6"><span className="flex items-center gap-1"><CalendarDays size={12}/> {p.startDate}</span><span className="flex items-center gap-1"><MapPin size={12}/> {p.callLocation}</span></div><div className="w-full bg-black h-2 rounded-full overflow-hidden"><div className="h-full transition-all duration-500 bg-purple-500" style={{width: `${progress}%`}}></div></div></div></div>)})}</div>
-    </div>
-  );
-};
-
-// --- FIX: PROFILE SETTINGS (CRASH PREVENTION) ---
-const ProfileSettings = ({currentUser, logActivity}) => {
-  // SAFETY: Initialize with default empty strings to prevent "uncontrolled" error
-  const [data, setData] = useState(currentUser || { displayName: '', bio: '', avatar: '' });
-  const [showAv, setShowAv] = useState(false);
-
-  // Sync with currentUser updates (in case of external changes)
-  useEffect(() => {
-    if (currentUser) setData(currentUser);
-  }, [currentUser]);
-
-  const save = async (e) => { 
-    e.preventDefault(); 
-    await updateDoc(doc(db, COLLECTION_USERS, currentUser.uid), {
-      displayName: data.displayName, 
-      bio: data.bio || '', 
-      avatar: data.avatar
-    }); 
-    logActivity(`Updated profile`); 
-    setShowAv(false); 
-  };
-
-  if (!data) return <div className="text-zinc-500">Loading profile...</div>;
-
-  return (
-    <div className="max-w-2xl mx-auto bg-zinc-900 p-10 rounded-3xl border border-zinc-800">
-       <div className="flex items-center gap-6 mb-8">
-           <div className="w-24 h-24 rounded-2xl bg-white border-4 border-zinc-800 overflow-hidden shadow-2xl relative">
-              <img src={data.avatar} className="w-full h-full object-cover"/>
-           </div>
-           <div>
-              <h3 className="text-white font-bold text-xl">{data.displayName}</h3>
-              <button onClick={()=>setShowAv(!showAv)} className="text-purple-400 text-xs font-bold uppercase tracking-wider hover:text-white mt-2">Change Appearance</button>
-           </div>
-       </div>
-       {showAv && <AvatarSelector currentAvatar={data.avatar} onSelect={(url) => { setData({...data, avatar: url}); setShowAv(false); }} />}
-       
-       <form onSubmit={save} className="space-y-6 mt-6">
-         <div>
-            <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Codename</label>
-            <input 
-              value={data.displayName || ''} 
-              onChange={e=>setData({...data, displayName:e.target.value})} 
-              className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none"
-            />
-         </div>
-         <div>
-            <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Bio / Status</label>
-            <textarea 
-              value={data.bio || ''} 
-              onChange={e=>setData({...data, bio:e.target.value})} 
-              className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none h-32 resize-none"
-            />
-         </div>
-         <button className="bg-white text-black px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-purple-50 transition w-full">Save Identity</button>
-       </form>
     </div>
   );
 };
@@ -515,25 +576,33 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity }) 
   );
 };
 
+const ProfileSettings = ({currentUser, logActivity}) => {
+  const [data, setData] = useState(currentUser || { displayName: '', bio: '', avatar: '' });
+  const [showAv, setShowAv] = useState(false);
+  useEffect(() => { if (currentUser) setData(currentUser); }, [currentUser]);
+  const save = async (e) => { e.preventDefault(); await updateDoc(doc(db, COLLECTION_USERS, currentUser.uid), {displayName: data.displayName, bio: data.bio || '', avatar: data.avatar}); logActivity(`Updated profile`); setShowAv(false); };
+  if (!data) return <div className="text-zinc-500">Loading profile...</div>;
+  return (
+    <div className="max-w-2xl mx-auto bg-zinc-900 p-10 rounded-3xl border border-zinc-800"><div className="flex items-center gap-6 mb-8"><div className="w-24 h-24 rounded-2xl bg-white border-4 border-zinc-800 overflow-hidden shadow-2xl relative"><img src={data.avatar} className="w-full h-full object-cover"/></div><div><h3 className="text-white font-bold text-xl">{data.displayName}</h3><button onClick={()=>setShowAv(!showAv)} className="text-purple-400 text-xs font-bold uppercase tracking-wider hover:text-white mt-2">Change Appearance</button></div></div>{showAv && <AvatarSelector currentAvatar={data.avatar} onSelect={(url) => { setData({...data, avatar: url}); setShowAv(false); }} />}<form onSubmit={save} className="space-y-6 mt-6"><div><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Codename</label><input value={data.displayName || ''} onChange={e=>setData({...data, displayName:e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none"/></div><div><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Bio / Status</label><textarea value={data.bio || ''} onChange={e=>setData({...data, bio:e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none h-32 resize-none"/></div><button className="bg-white text-black px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-purple-50 transition w-full">Save Identity</button></form></div>
+  );
+};
+
 const TeamManager = ({ users, currentUser, logActivity }) => {
-  if (currentUser.role !== 'admin') return null;
   const handleDelete = async (user) => { if(confirm(`Remove ${user.displayName}?`)) { await deleteDoc(doc(db, COLLECTION_USERS, user.uid)); logActivity(`Removed user: ${user.displayName}`); }};
   return (
-    <div className="max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Users className="text-amber-500" /> CLAN ROSTER</h2><span className="text-xs text-zinc-500 bg-zinc-900 px-4 py-2 rounded-full border border-zinc-800 font-bold uppercase tracking-widest">Active: {users.length}</span></div><div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">{users.map(u => (<div key={u.uid} className="bg-zinc-900/50 p-6 rounded-3xl border border-zinc-800 hover:border-purple-500/30 transition group flex flex-col items-center text-center gap-4"><div className="w-20 h-20 rounded-full bg-black border-2 border-zinc-700 overflow-hidden group-hover:scale-110 transition shadow-xl"><img src={u.avatar} className="w-full h-full object-cover"/></div><div><p className="text-white font-black text-lg flex items-center justify-center gap-2">{u.displayName}{u.uid === currentUser.uid && <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded">YOU</span>}</p><p className="text-xs text-purple-400 font-mono mt-1 uppercase tracking-widest">{u.role}</p><p className="text-xs text-zinc-600 mt-2">@{u.username}</p></div>{u.uid !== currentUser.uid && (<button onClick={() => handleDelete(u)} className="mt-2 p-2 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition w-full flex justify-center"><Trash2 size={16} /></button>)}</div>))}</div></div>
+    <div className="max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Users className="text-amber-500" /> CLAN ROSTER</h2><span className="text-xs text-zinc-500 bg-zinc-900 px-4 py-2 rounded-full border border-zinc-800 font-bold uppercase tracking-widest">Active: {users.length}</span></div><div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">{users.map(u => (<div key={u.uid} className="bg-zinc-900/50 p-6 rounded-3xl border border-zinc-800 hover:border-purple-500/30 transition group flex flex-col items-center text-center gap-4"><div className="w-20 h-20 rounded-full bg-black border-2 border-zinc-700 overflow-hidden group-hover:scale-110 transition shadow-xl"><img src={u.avatar || `https://api.dicebear.com/9.x/avataaars/svg?seed=${u.uid}`} className="w-full h-full object-cover"/></div><div><p className="text-white font-black text-lg flex items-center justify-center gap-2">{u.displayName || 'Unknown Agent'}{u.uid === currentUser.uid && <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded">YOU</span>}</p><p className="text-xs text-purple-400 font-mono mt-1 uppercase tracking-widest">{u.role || 'N/A'}</p><p className="text-xs text-zinc-600 mt-2">@{u.username || '---'}</p></div>{currentUser.role === 'admin' && u.uid !== currentUser.uid && (<button onClick={() => handleDelete(u)} className="mt-2 p-2 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition w-full flex justify-center"><Trash2 size={16} /></button>)}</div>))}</div></div>
   );
 };
 
 // NEXUS MENU (INTEGRATED INTO DOCK)
 const NexusMenu = ({ isOpen, toggle, setActiveTab, handleLogout, role, openChat, hasUnread }) => {
+  const menuRef = useRef(null);
+  useEffect(() => { const handleClickOutside = (event) => { if (isOpen && menuRef.current && !menuRef.current.contains(event.target)) { toggle(); } }; document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside); }, [isOpen, toggle]);
   if (!isOpen) return null;
-
   return (
-    <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 w-[90%] max-w-[250px] z-50 flex flex-col gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200 lg:bottom-10 lg:left-24 lg:transform-none">
+    <div ref={menuRef} className="fixed bottom-24 left-1/2 transform -translate-x-1/2 w-[90%] max-w-[250px] z-50 flex flex-col gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200 lg:bottom-10 lg:left-24 lg:transform-none">
        <div className="bg-zinc-900/95 backdrop-blur-xl border border-zinc-700 rounded-2xl p-2 shadow-2xl flex flex-col gap-1">
-          <button onClick={() => { openChat(); toggle(); }} className="flex items-center gap-3 text-emerald-400 hover:text-emerald-300 hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold relative">
-             <MessageCircle size={18}/> Clan Comms
-             {hasUnread && <span className="absolute right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
-          </button>
+          <button onClick={() => { openChat(); toggle(); }} className="flex items-center gap-3 text-emerald-400 hover:text-emerald-300 hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold relative"><MessageCircle size={18}/> Clan Comms{hasUnread && <span className="absolute right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}</button>
           <button onClick={() => { setActiveTab('team'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Users size={18}/> Clan Members</button>
           <button onClick={() => { setActiveTab('profile'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Settings size={18}/> My Identity</button>
           {role === 'admin' && <button onClick={() => { setActiveTab('cinema_admin'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Video size={18} className="text-amber-400"/> Cinema Control</button>}
@@ -560,19 +629,37 @@ const App = () => {
   const [requests, setRequests] = useState([]);
   const [screenings, setScreenings] = useState([]);
   const [polls, setPolls] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
 
-  // Auth Init
   useEffect(() => {
     const initAuth = async () => {
-        if (!auth.currentUser) {
-            try { await signInAnonymously(auth); } catch (e) { console.error(e); }
-        }
+        const storedUid = localStorage.getItem('clan_yujo_uid');
+        if (storedUid) {
+             const docRef = doc(db, COLLECTION_USERS, storedUid);
+             const docSnap = await getDoc(docRef);
+             if (docSnap.exists()) { setCurrentUser(docSnap.data()); setIsAuthReady(true); } 
+             else { localStorage.removeItem('clan_yujo_uid'); if (!auth.currentUser) await signInAnonymously(auth); }
+        } else { if (!auth.currentUser) await signInAnonymously(auth); }
     };
-    const unsubscribe = onAuthStateChanged(auth, (user) => { if (user) { setIsAuthReady(true); } else { initAuth(); } });
+    const unsubscribe = onAuthStateChanged(auth, (user) => { if (user) { setIsAuthReady(true); if (!currentUser) { const storedUid = localStorage.getItem('clan_yujo_uid'); } } else { initAuth(); } });
     return () => unsubscribe();
   }, []);
 
-  // Main Data Subscriptions
+  useEffect(() => { if (currentUser && "Notification" in window && Notification.permission !== "granted") Notification.requestPermission(); }, [currentUser]);
+
+  useEffect(() => {
+      if (!currentUser) return;
+      const unsub = onSnapshot(collection(db, COLLECTION_ANNOUNCEMENTS), (snap) => {
+          snap.docChanges().forEach((change) => {
+              if (change.type === 'added') {
+                  const data = change.doc.data();
+                  if (Date.now() - (data.createdAt?.toMillis() || 0) < 10000) { if (Notification.permission === "granted") new Notification("HQ Broadcast", { body: data.text, icon: LOGO_URL }); }
+              }
+          });
+      });
+      return () => unsub();
+  }, [currentUser]);
+
   useEffect(() => {
     if (!currentUser) return;
     const unsubMe = onSnapshot(doc(db, COLLECTION_USERS, currentUser.uid), (d) => { if (d.exists()) setCurrentUser(d.data()); });
@@ -583,165 +670,73 @@ const App = () => {
     const u5 = onSnapshot(collection(db, COLLECTION_REQUESTS), (s) => setRequests(s.docs.map(d => ({id: d.id, ...d.data()}))));
     const u6 = onSnapshot(query(collection(db, COLLECTION_SCREENINGS), orderBy('createdAt', 'desc'), limit(1)), (s) => setScreenings(s.docs.map(d => ({id: d.id, ...d.data()}))));
     const u7 = onSnapshot(query(collection(db, COLLECTION_POLLS), orderBy('createdAt', 'desc'), limit(1)), (s) => setPolls(s.docs.map(d => ({id: d.id, ...d.data()}))));
-    
-    // NOTIFICATION LISTENER (Lightweight)
-    const u8 = onSnapshot(collection(db, COLLECTION_MESSAGES), (snap) => {
-       if (!showChat && snap.docChanges().some(change => change.type === 'added')) {
-           setHasUnread(true);
-       }
-    });
+    const u8 = onSnapshot(collection(db, COLLECTION_MESSAGES), (snap) => { if (!showChat && snap.docChanges().some(change => change.type === 'added')) { setHasUnread(true); const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg"); audio.volume = 0.1; audio.play().catch(() => {}); } });
+    const u9 = onSnapshot(query(collection(db, COLLECTION_ANNOUNCEMENTS), orderBy('createdAt', 'desc'), limit(1)), (s) => setAnnouncements(s.docs.map(d => ({id: d.id, ...d.data()}))));
+    return () => { unsubMe(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); };
+  }, [currentUser?.uid, showChat]);
 
-    return () => { unsubMe(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); };
-  }, [currentUser?.uid, showChat]); // Re-sub when chat visibility changes to reset notifications logic
-
-  // Clear notification when chat opens
-  useEffect(() => {
-      if (showChat) setHasUnread(false);
-  }, [showChat]);
-
+  useEffect(() => { if (showChat) setHasUnread(false); }, [showChat]);
   const logActivity = async (action) => { await addDoc(collection(db, COLLECTION_LOGS), { userId: currentUser.uid, userName: currentUser.displayName, action, timestamp: serverTimestamp() }); };
+  const handleManualLogin = (userData) => { localStorage.setItem('clan_yujo_uid', userData.uid); setCurrentUser(userData); };
+  const handleLogout = () => { localStorage.removeItem('clan_yujo_uid'); setCurrentUser(null); setActiveTab('dashboard'); };
 
   if (!isAuthReady) return <div className="min-h-screen bg-black flex flex-col items-center justify-center text-zinc-600 font-mono"><RefreshCw size={48} className="animate-spin text-purple-600 mb-6"/><p className="text-sm tracking-[0.3em] uppercase">CLAN YUJO // INITIALIZING</p></div>;
-  if (!currentUser) return <LoginScreen onLogin={setCurrentUser} isAuthReady={isAuthReady} />;
+  if (!currentUser) return <LoginScreen onLogin={handleManualLogin} isAuthReady={isAuthReady} />;
 
   return (
     <div className="min-h-screen bg-black text-zinc-200 font-sans flex flex-col lg:flex-row overflow-hidden">
-      
-      {/* SIDEBAR (DESKTOP & MOBILE) */}
       <div className="hidden lg:flex w-72 bg-zinc-950 border-r border-zinc-900 flex-col relative z-20 justify-between p-0">
         <div className="h-24 flex items-center px-8 border-b border-zinc-900">
-           <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center mr-3 shadow-lg shadow-purple-500/20 rotate-3 overflow-hidden">
-             {LOGO_URL ? <img src={LOGO_URL} className="w-full h-full object-cover" /> : <Hexagon className="text-black w-6 h-6" />}
-           </div>
+           <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center mr-3 shadow-lg shadow-purple-500/20 rotate-3 overflow-hidden">{LOGO_URL ? <img src={LOGO_URL} className="w-full h-full object-cover" /> : <Hexagon className="text-black w-6 h-6" />}</div>
            <span className="font-black text-white text-xl tracking-tighter">CLAN YUJO</span>
         </div>
         <nav className="flex-1 py-8 space-y-2 px-4">
           {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Headquarters' },{ id: 'bookings', icon: Clock, label: 'Armory / Labs' },{ id: 'projects', icon: Film, label: 'Missions' }].map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center p-4 rounded-2xl transition-all duration-300 group ${activeTab === item.id ? 'bg-white text-black shadow-lg shadow-white/10 scale-[1.02]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-white'}`}>
-              <item.icon size={20} className={activeTab === item.id ? 'text-black' : 'group-hover:text-purple-400 transition'} /><span className="ml-4 font-bold text-sm tracking-wide">{item.label}</span>
-            </button>
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center p-4 rounded-2xl transition-all duration-300 group ${activeTab === item.id ? 'bg-white text-black shadow-lg shadow-white/10 scale-[1.02]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-white'}`}><item.icon size={20} className={activeTab === item.id ? 'text-black' : 'group-hover:text-purple-400 transition'} /><span className="ml-4 font-bold text-sm tracking-wide">{item.label}</span></button>
           ))}
         </nav>
-        {/* Desktop Nexus Trigger */}
-        <div className="p-4">
-            <button onClick={() => setIsNexusOpen(!isNexusOpen)} className="w-full flex items-center justify-center p-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white transition-all duration-300 group border border-zinc-800 relative">
-                <Grid size={20} className="text-purple-500 group-hover:scale-110 transition"/>
-                <span className="ml-3 font-bold text-sm tracking-wider">NEXUS MENU</span>
-                {hasUnread && <span className="absolute top-4 right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
-            </button>
-        </div>
+        <div className="p-4"><button onClick={() => setIsNexusOpen(!isNexusOpen)} className="w-full flex items-center justify-center p-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white transition-all duration-300 group border border-zinc-800 relative"><Grid size={20} className="text-purple-500 group-hover:scale-110 transition"/><span className="ml-3 font-bold text-sm tracking-wider">NEXUS MENU</span>{hasUnread && <span className="absolute top-4 right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}</button></div>
       </div>
-
-      {/* MOBILE FLOATING DOCK (INTEGRATED NEXUS) */}
       <div className="lg:hidden fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm bg-zinc-950/90 backdrop-blur-2xl border border-zinc-800 rounded-full z-40 flex justify-around items-center p-1.5 shadow-2xl shadow-black/50">
-         {[{ id: 'dashboard', label: 'Home', icon: LayoutDashboard },{ id: 'bookings', label: 'Gear', icon: Clock }].map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3.5 rounded-full transition-all duration-300 relative group ${activeTab === item.id ? 'bg-white text-black shadow-lg scale-110' : 'text-zinc-500 hover:text-white'}`}>
-              <item.icon size={20} strokeWidth={2.5} />
-            </button>
-         ))}
-         
-         {/* CENTER NEXUS BUTTON */}
-         <button onClick={() => setIsNexusOpen(!isNexusOpen)} className="p-4 rounded-full bg-zinc-900 text-white shadow-lg border border-zinc-700 relative transform hover:scale-110 transition active:scale-95">
-             <Hexagon size={24} className="text-purple-500" fill="currentColor" fillOpacity={0.2} />
-             {hasUnread && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-black animate-pulse"></span>}
-         </button>
-
-         {[{ id: 'projects', label: 'Work', icon: Briefcase }, { id: 'team', label: 'Clan', icon: Users }].map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3.5 rounded-full transition-all duration-300 relative group ${activeTab === item.id ? 'bg-white text-black shadow-lg scale-110' : 'text-zinc-500 hover:text-white'}`}>
-              <item.icon size={20} strokeWidth={2.5} />
-            </button>
-         ))}
+         {[{ id: 'dashboard', label: 'Home', icon: LayoutDashboard },{ id: 'bookings', label: 'Gear', icon: Clock }].map(item => (<button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3.5 rounded-full transition-all duration-300 relative group ${activeTab === item.id ? 'bg-white text-black shadow-lg scale-110' : 'text-zinc-500 hover:text-white'}`}><item.icon size={20} strokeWidth={2.5} /></button>))}
+         <button onClick={() => setIsNexusOpen(!isNexusOpen)} className="p-4 rounded-full bg-zinc-900 text-white shadow-lg border border-zinc-700 relative transform hover:scale-110 transition active:scale-95"><Hexagon size={24} className="text-purple-500" fill="currentColor" fillOpacity={0.2} />{hasUnread && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-black animate-pulse"></span>}</button>
+         {[{ id: 'projects', label: 'Work', icon: Briefcase }, { id: 'team', label: 'Clan', icon: Users }].map(item => (<button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3.5 rounded-full transition-all duration-300 relative group ${activeTab === item.id ? 'bg-white text-black shadow-lg scale-110' : 'text-zinc-500 hover:text-white'}`}><item.icon size={20} strokeWidth={2.5} /></button>))}
       </div>
-
-      {/* MAIN AREA */}
       <main className="flex-1 overflow-y-auto p-6 lg:p-10 relative bg-black scroll-smooth pb-32 lg:pb-10">
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5 pointer-events-none fixed"></div>
         <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-zinc-950 to-transparent pointer-events-none z-10"></div>
-
         <div className="relative z-20 max-w-7xl mx-auto">
-          {/* MOBILE HEADER */}
           <div className="lg:hidden flex items-center justify-between mb-8 mt-2">
-              <div className="flex items-center gap-3">
-                 <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center rotate-3 overflow-hidden shadow-lg">
-                   {LOGO_URL ? <img src={LOGO_URL} className="w-full h-full object-cover" /> : <Hexagon className="text-black w-6 h-6" />}
-                 </div>
-                 <span className="font-black text-white text-lg tracking-tighter">YUJO OS</span>
-              </div>
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center rotate-3 overflow-hidden shadow-lg">{LOGO_URL ? <img src={LOGO_URL} className="w-full h-full object-cover" /> : <Hexagon className="text-black w-6 h-6" />}</div><span className="font-black text-white text-lg tracking-tighter">YUJO OS</span></div>
               <div className="w-9 h-9 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700" onClick={() => setActiveTab('profile')}><img src={currentUser.avatar} className="w-full h-full object-cover"/></div>
           </div>
-
           <header className="hidden lg:flex justify-between items-end mb-10">
-             <div>
-                <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-1">{activeTab.replace('_', ' ')}</h1>
-                <p className="text-zinc-500 text-sm font-mono">OPERATOR: {currentUser.displayName.toUpperCase()} // STATUS: ONLINE</p>
-             </div>
-             <div className="flex items-center gap-4">
-               <div className="bg-zinc-900 p-2 rounded-full border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600 transition cursor-pointer"><Bell size={20}/></div>
-               <div className="w-10 h-10 rounded-full bg-white border-2 border-zinc-800 overflow-hidden cursor-pointer hover:scale-105 transition" onClick={() => setActiveTab('profile')}><img src={currentUser.avatar} className="w-full h-full object-cover"/></div>
-             </div>
+             <div><h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-1">{activeTab.replace('_', ' ')}</h1><p className="text-zinc-500 text-sm font-mono">OPERATOR: {currentUser.displayName.toUpperCase()} // STATUS: ONLINE</p></div>
+             <div className="flex items-center gap-4"><div className="bg-zinc-900 p-2 rounded-full border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600 transition cursor-pointer"><Bell size={20}/></div><div className="w-10 h-10 rounded-full bg-white border-2 border-zinc-800 overflow-hidden cursor-pointer hover:scale-105 transition" onClick={() => setActiveTab('profile')}><img src={currentUser.avatar} className="w-full h-full object-cover"/></div></div>
           </header>
-
-          {/* VIEWS */}
           {activeTab === 'dashboard' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:h-96">
-                   <MovieDisplayWidget screening={screenings[0]} />
-                   <PollWidget poll={polls[0]} currentUser={currentUser} logActivity={logActivity} />
-                </div>
-                
-                {/* NEW ACTIVITY FEED DESIGN */}
+                <AnnouncementsWidget announcements={announcements} isAdmin={currentUser.role === 'admin'} logActivity={logActivity} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:h-96"><MovieDisplayWidget screening={screenings[0]} /><PollWidget poll={polls[0]} currentUser={currentUser} logActivity={logActivity} /></div>
                 <div className="bg-zinc-900/30 rounded-3xl border border-zinc-800 p-6 lg:p-8 backdrop-blur-sm">
-                    <div className="flex items-center justify-between mb-6">
-                       <h3 className="font-black text-white flex items-center gap-3 text-lg tracking-wide"><Activity className="text-blue-500"/> DATA STREAM</h3>
-                       <span className="text-[10px] font-mono text-zinc-500 bg-black/50 px-2 py-1 rounded uppercase">Live</span>
-                    </div>
-                    <div className="space-y-0 relative pl-4 border-l border-zinc-800/50">
-                       {logs.slice(0,6).map((l, i) => (
-                          <div key={l.id} className="relative pl-6 pb-8 last:pb-0 group">
-                             <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-zinc-950 border-2 border-zinc-700 group-hover:border-purple-500 group-hover:scale-125 transition z-10"></div>
-                             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                                <span className="text-xs font-mono text-zinc-600">{l.timestamp ? new Date(l.timestamp.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}</span>
-                                <span className="text-white font-bold text-sm hover:text-purple-400 transition cursor-default">{l.userName}</span>
-                                <span className="text-zinc-400 text-sm truncate">{l.action}</span>
-                             </div>
-                          </div>
-                       ))}
-                    </div>
+                    <div className="flex items-center justify-between mb-6"><h3 className="font-black text-white flex items-center gap-3 text-lg tracking-wide"><Activity className="text-blue-500"/> DATA STREAM</h3><span className="text-[10px] font-mono text-zinc-500 bg-black/50 px-2 py-1 rounded uppercase">Live</span></div>
+                    <div className="space-y-0 relative pl-4 border-l border-zinc-800/50">{logs.slice(0,6).map((l, i) => (<div key={l.id} className="relative pl-6 pb-8 last:pb-0 group"><div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-zinc-950 border-2 border-zinc-700 group-hover:border-purple-500 group-hover:scale-125 transition z-10"></div><div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3"><span className="text-xs font-mono text-zinc-600">{l.timestamp ? new Date(l.timestamp.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}</span><span className="text-white font-bold text-sm hover:text-purple-400 transition cursor-default">{l.userName}</span><span className="text-zinc-400 text-sm truncate">{l.action}</span></div></div>))}</div>
                 </div>
               </div>
               <div className="space-y-8">
-                 <div className="bg-gradient-to-br from-purple-900/10 to-zinc-900 rounded-3xl border border-purple-500/20 p-6 lg:p-8">
-                    <h3 className="text-white font-black mb-6 uppercase tracking-widest text-xs">System Status</h3>
-                    <div className="space-y-4">
-                       <div className="bg-black/40 p-4 rounded-2xl border border-zinc-800 flex justify-between items-center group hover:border-purple-500/30 transition"><div className="flex items-center gap-3"><Layers size={18} className="text-zinc-500 group-hover:text-purple-400"/><span className="text-zinc-400 text-sm font-bold">MISSIONS</span></div><span className="text-white font-mono text-xl">{projects.length}</span></div>
-                       <div className="bg-black/40 p-4 rounded-2xl border border-zinc-800 flex justify-between items-center group hover:border-purple-500/30 transition"><div className="flex items-center gap-3"><Users size={18} className="text-zinc-500 group-hover:text-purple-400"/><span className="text-zinc-400 text-sm font-bold">MEMBERS</span></div><span className="text-white font-mono text-xl">{users.length}</span></div>
-                       <div className="bg-black/40 p-4 rounded-2xl border border-zinc-800 flex justify-between items-center group hover:border-purple-500/30 transition"><div className="flex items-center gap-3"><Zap size={18} className="text-zinc-500 group-hover:text-emerald-400"/><span className="text-zinc-400 text-sm font-bold">GEAR ACTIVE</span></div><span className="text-white font-mono text-xl text-emerald-400">{bookings.filter(b => b.status === 'active').length}</span></div>
-                    </div>
-                 </div>
+                 <div className="bg-gradient-to-br from-purple-900/10 to-zinc-900 rounded-3xl border border-purple-500/20 p-6 lg:p-8"><h3 className="text-white font-black mb-6 uppercase tracking-widest text-xs">System Status</h3><div className="space-y-4"><div className="bg-black/40 p-4 rounded-2xl border border-zinc-800 flex justify-between items-center group hover:border-purple-500/30 transition"><div className="flex items-center gap-3"><Layers size={18} className="text-zinc-500 group-hover:text-purple-400"/><span className="text-zinc-400 text-sm font-bold">MISSIONS</span></div><span className="text-white font-mono text-xl">{projects.length}</span></div><div className="bg-black/40 p-4 rounded-2xl border border-zinc-800 flex justify-between items-center group hover:border-purple-500/30 transition"><div className="flex items-center gap-3"><Users size={18} className="text-zinc-500 group-hover:text-purple-400"/><span className="text-zinc-400 text-sm font-bold">MEMBERS</span></div><span className="text-white font-mono text-xl">{users.length}</span></div><div className="bg-black/40 p-4 rounded-2xl border border-zinc-800 flex justify-between items-center group hover:border-purple-500/30 transition"><div className="flex items-center gap-3"><Zap size={18} className="text-zinc-500 group-hover:text-emerald-400"/><span className="text-zinc-400 text-sm font-bold">GEAR ACTIVE</span></div><span className="text-white font-mono text-xl text-emerald-400">{bookings.filter(b => b.status === 'active').length}</span></div></div></div>
               </div>
             </div>
           )}
           {activeTab === 'bookings' && <BookingSystem currentUser={currentUser} bookings={bookings} users={users} requests={requests} logActivity={logActivity} />}
-          {activeTab === 'projects' && <ProjectTracker projects={projects} users={users} isAdmin={currentUser.role==='admin'} logActivity={logActivity} />}
+          {activeTab === 'projects' && <ProjectTracker projects={projects} users={users} isAdmin={currentUser.role==='admin'} logActivity={logActivity} currentUser={currentUser} />}
           {activeTab === 'team' && <TeamManager users={users} currentUser={currentUser} logActivity={logActivity} />}
           {activeTab === 'profile' && <ProfileSettings currentUser={currentUser} logActivity={logActivity} />}
           {activeTab === 'cinema_admin' && currentUser.role === 'admin' && <MovieNightAdmin logActivity={logActivity} />}
         </div>
-
-        {/* NEXUS BUBBLE MENU (Integrated into Sidebar/Dock) */}
-        <NexusMenu 
-           isOpen={isNexusOpen} 
-           toggle={() => setIsNexusOpen(!isNexusOpen)} 
-           setActiveTab={setActiveTab}
-           handleLogout={() => { setCurrentUser(null); setActiveTab('dashboard'); }}
-           role={currentUser.role}
-           openChat={() => setShowChat(true)}
-           hasUnread={hasUnread}
-        />
-        
+        <NexusMenu isOpen={isNexusOpen} toggle={() => setIsNexusOpen(!isNexusOpen)} setActiveTab={setActiveTab} handleLogout={handleLogout} role={currentUser.role} openChat={() => setShowChat(true)} hasUnread={hasUnread} />
         {showChat && <GlobalChat currentUser={currentUser} onClose={() => setShowChat(false)} />}
-
       </main>
     </div>
   );
