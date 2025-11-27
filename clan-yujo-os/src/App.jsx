@@ -7,13 +7,14 @@ import {
   MessageCircle, Vote, BarChart2, PlayCircle, Wifi, WifiOff, Zap, Hexagon, 
   Menu, X, Grid, MoreVertical, ChevronRight, Image as ImageIcon, Upload, 
   Layers, Briefcase, MapPin, CalendarDays, CheckSquare, Flag, ArrowLeft, 
-  AlertTriangle, MessageSquareCode, Minimize2, Command, Megaphone, HardDrive
+  AlertTriangle, MessageSquareCode, Minimize2, Command, Megaphone, HardDrive,
+  Sticker, CornerDownRight, Loader2, Reply
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
   getFirestore, collection, doc, setDoc, addDoc, onSnapshot, query, 
-  orderBy, updateDoc, deleteDoc, limit, serverTimestamp, where, getDocs 
+  orderBy, updateDoc, deleteDoc, limit, serverTimestamp, where, getDocs, getDoc 
 } from 'firebase/firestore';
 
 // --- 1. FIREBASE CONFIGURATION ---
@@ -41,10 +42,18 @@ const COLLECTION_SCREENINGS = 'screenings';
 const COLLECTION_POLLS = 'polls'; 
 const COLLECTION_MESSAGES = 'messages'; 
 const COLLECTION_ANNOUNCEMENTS = 'announcements';
+const COLLECTION_STICKERS = 'stickers'; 
 
-const ADMIN_CODE = "VIVID2025";  
-const STAFF_CODE = "ACTION2025"; 
+const ADMIN_CODE = "MINATO2025";  
+const STAFF_CODE = "AKIRA2025"; 
+const TEMP_CODE = "TEMP2025";
 const LOGO_URL = "/logo.jpeg"; 
+
+// Pre-defined stickers fallback
+const DEFAULT_STICKERS = [
+  { id: 's1', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=Love&backgroundColor=transparent', name: 'Love' },
+  { id: 's2', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=Fire&backgroundColor=transparent', name: 'Fire' },
+];
 
 const PRE_PROD_ROLES = {
   'Production': ['Producer', 'Line Producer', 'Production Manager', 'Coordinator', 'PA'],
@@ -85,6 +94,8 @@ const AVATAR_STYLES = [
   { id: 'micah', name: 'Clean' }
 ];
 
+const REACTION_EMOJIS = ['🔥', '❤️', '👍', '😂', '🦅', '👀'];
+
 const formatDate = (date) => date.toISOString().split('T')[0];
 const generatePassword = () => {
   const chars = "abcdefghijkmnpqrstuvwxyz23456789"; 
@@ -93,15 +104,160 @@ const generatePassword = () => {
   return pass;
 };
 
+// --- UTILS ---
+const compressImage = (file, quality = 0.7, maxWidth = 1080) => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const scale = Math.min(1, maxWidth / img.width);
+                
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
+                
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', quality)); 
+            };
+        };
+    });
+};
+
 // --- 3. COMPONENTS ---
 
-// GLOBAL CHAT
+// SWIPEABLE MESSAGE COMPONENT
+const SwipeableMessage = ({ msg, isMe, onTriggerOptions, activeReactionId, setActiveReactionId, toggleReaction, setReplyTo }) => {
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
+  const [translateX, setTranslateX] = useState(0);
+  
+  const minSwipeDistance = 50; 
+
+  const onTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+    if (touchStart) {
+        const currentX = e.targetTouches[0].clientX;
+        const diff = currentX - touchStart;
+        // Only allow swiping left for options
+        if (diff < 0 && diff > -100) {
+            setTranslateX(diff);
+        }
+    }
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    
+    if (isLeftSwipe) {
+       onTriggerOptions(msg.id);
+    }
+    
+    setTranslateX(0); // Reset position
+    setTouchStart(null);
+    setTouchEnd(null);
+  };
+
+  const isSelected = activeReactionId === msg.id;
+
+  return (
+    <div className={`relative ${isMe ? 'flex flex-col items-end' : 'flex flex-col items-start'} overflow-x-clip`}>
+       <div 
+         className={`flex gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'} transition-transform duration-200`}
+         style={{ transform: `translateX(${translateX}px)` }}
+         onTouchStart={onTouchStart}
+         onTouchMove={onTouchMove}
+         onTouchEnd={onTouchEnd}
+         onContextMenu={(e) => { e.preventDefault(); onTriggerOptions(msg.id); }}
+       >
+            {!isMe && <img src={msg.avatar} className="w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 object-cover flex-shrink-0 mt-auto"/>}
+            
+            <div className="relative group">
+                {/* Reply Context */}
+                {msg.replyTo && (
+                    <div className={`text-[10px] mb-1 px-2 flex items-center gap-1 opacity-60 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        <CornerDownRight size={10}/> Replying to {msg.replyTo.name}
+                    </div>
+                )}
+
+                {/* Bubble */}
+                <div className={`p-3 rounded-2xl shadow-md relative transition-all duration-200 ${isSelected ? 'scale-95 ring-2 ring-emerald-500/50' : ''} ${isMe ? 'bg-white text-black rounded-tr-sm' : 'bg-zinc-800 text-zinc-200 rounded-tl-sm'}`}>
+                    {msg.replyTo && (
+                        <div className={`mb-2 p-1.5 rounded border-l-2 text-[10px] opacity-80 ${isMe ? 'bg-gray-100 border-gray-400 text-gray-600' : 'bg-black/20 border-emerald-500 text-zinc-400'}`}>
+                            <p className="font-bold truncate">{msg.replyTo.name}</p>
+                            <p className="truncate">{msg.replyTo.text}</p>
+                        </div>
+                    )}
+
+                    {!isMe && <p className={`text-[9px] font-bold mb-0.5 uppercase ${isMe ? 'text-black/50' : 'text-emerald-400'}`}>{msg.displayName}</p>}
+                    
+                    {msg.type === 'sticker' ? (
+                        <img src={msg.content} className="w-14 h-14 object-contain drop-shadow-sm" alt="Sticker" />
+                    ) : msg.image ? (
+                        <img src={msg.image} className="rounded-lg w-full h-auto border border-black/10" />
+                    ) : (
+                        <p className="text-sm leading-snug whitespace-pre-wrap">{msg.text}</p>
+                    )}
+                </div>
+
+                {/* Reactions Display */}
+                {msg.reactions && Object.keys(msg.reactions).some(k => msg.reactions[k].length > 0) && (
+                    <div className={`absolute -bottom-2.5 ${isMe ? 'right-1' : 'left-1'} flex gap-0.5 z-10`}>
+                        {Object.entries(msg.reactions).map(([emoji, users]) => (
+                            users.length > 0 && (
+                                <span key={emoji} className="bg-zinc-900 border border-zinc-700 text-[9px] px-1 py-0.5 rounded-full text-white shadow-sm flex items-center gap-0.5 animate-in zoom-in">
+                                    {emoji} {users.length > 1 && <span className="opacity-60">{users.length}</span>}
+                                </span>
+                            )
+                        ))}
+                    </div>
+                )}
+            </div>
+       </div>
+
+        {/* OPTIONS TRAY (Triggered by Swipe/Right Click) */}
+        {isSelected && (
+            <>
+            <div className="fixed inset-0 z-40" onClick={() => setActiveReactionId(null)}></div>
+            <div className={`absolute z-50 ${isMe ? 'right-0' : 'left-12'} -top-10 bg-zinc-800 p-1 rounded-full shadow-xl flex gap-1 border border-zinc-600 animate-in fade-in slide-in-from-bottom-2`}>
+                {REACTION_EMOJIS.map(emoji => (
+                    <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)} className="hover:bg-zinc-700 p-1.5 rounded-full transition hover:scale-125 active:scale-95 text-base leading-none">
+                        {emoji}
+                    </button>
+                ))}
+                <div className="w-px bg-zinc-600 mx-1"></div>
+                <button onClick={() => { setReplyTo(msg); setActiveReactionId(null); }} className="hover:bg-zinc-700 p-1.5 rounded-full text-zinc-300"><Reply size={14}/></button>
+            </div>
+            </>
+        )}
+    </div>
+  );
+};
+
+
+// GLOBAL CHAT (CONTAINER)
 const GlobalChat = ({ currentUser, onClose }) => {
   const [msgText, setMsgText] = useState('');
   const [messages, setMessages] = useState([]);
+  const [savedStickers, setSavedStickers] = useState([]);
   const [isSending, setIsSending] = useState(false);
+  const [activeReactionId, setActiveReactionId] = useState(null); 
+  const [replyTo, setReplyTo] = useState(null);
+  const [showStickerHub, setShowStickerHub] = useState(false);
+  
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
+  const stickerInputRef = useRef(null);
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -114,6 +270,7 @@ const GlobalChat = ({ currentUser, onClose }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [onClose]);
 
+  // Load Messages
   useEffect(() => {
     const q = query(collection(db, COLLECTION_MESSAGES), limit(50));
     const unsub = onSnapshot(q, (snap) => {
@@ -125,80 +282,161 @@ const GlobalChat = ({ currentUser, onClose }) => {
     return () => unsub();
   }, []);
 
+  // Load Shared Stickers
+  useEffect(() => {
+      const q = query(collection(db, COLLECTION_STICKERS), orderBy('createdAt', 'desc'), limit(20));
+      const unsub = onSnapshot(q, (snap) => {
+          const stickers = snap.docs.map(d => ({id: d.id, ...d.data()}));
+          // Merge with defaults if empty
+          setSavedStickers(stickers.length > 0 ? stickers : DEFAULT_STICKERS);
+      });
+      return () => unsub();
+  }, []);
+
+  // Image Handler
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
         const reader = new FileReader();
-        reader.onloadend = () => sendImageMessage(reader.result);
+        reader.onloadend = () => sendToDb({ image: reader.result }); 
         reader.readAsDataURL(file);
     }
   };
 
-  const sendImageMessage = async (base64Image) => {
+  // Sticker Upload Handler (Aggressive Compression for Icons)
+  const handleStickerUpload = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
       setIsSending(true);
       try {
-        await addDoc(collection(db, COLLECTION_MESSAGES), {
-            image: base64Image,
-            uid: currentUser.uid,
-            displayName: currentUser.displayName,
-            avatar: currentUser.avatar,
+        // Resize to 150px width max for stickers
+        const compressedSticker = await compressImage(file, 0.7, 150);
+        await addDoc(collection(db, COLLECTION_STICKERS), {
+            url: compressedSticker,
+            addedBy: currentUser.displayName,
             createdAt: serverTimestamp()
         });
       } catch(err) { console.error(err); }
       finally { setIsSending(false); }
   };
 
-  const sendMessage = async (e) => {
-    e.preventDefault();
-    if (!msgText.trim()) return;
-    setIsSending(true);
-    try {
+  const sendToDb = async (data) => {
+      setIsSending(true);
+      try {
         await addDoc(collection(db, COLLECTION_MESSAGES), {
-          text: msgText, uid: currentUser.uid, displayName: currentUser.displayName, avatar: currentUser.avatar, createdAt: serverTimestamp()
+            ...data,
+            uid: currentUser.uid,
+            displayName: currentUser.displayName,
+            avatar: currentUser.avatar,
+            reactions: {}, 
+            replyTo: replyTo ? { id: replyTo.id, name: replyTo.displayName, text: replyTo.text || "Media" } : null,
+            createdAt: serverTimestamp()
         });
         setMsgText('');
-    } catch (err) { console.error(err); } 
-    finally { setIsSending(false); }
+        setReplyTo(null);
+        setActiveReactionId(null);
+        setShowStickerHub(false);
+      } catch(err) { console.error(err); }
+      finally { setIsSending(false); }
+  };
+
+  const toggleReaction = async (msgId, emoji) => {
+      const msgRef = doc(db, COLLECTION_MESSAGES, msgId);
+      const msg = messages.find(m => m.id === msgId);
+      if (!msg) return;
+      
+      const currentReactions = msg.reactions || {};
+      const userList = currentReactions[emoji] || [];
+      const newUserList = userList.includes(currentUser.uid) 
+          ? userList.filter(id => id !== currentUser.uid) 
+          : [...userList, currentUser.uid];
+      
+      await updateDoc(msgRef, { [`reactions.${emoji}`]: newUserList });
+      setActiveReactionId(null);
   };
 
   return (
-    <div ref={containerRef} className="fixed bottom-32 right-4 md:right-8 z-[60] w-[calc(100vw-2rem)] md:w-96 h-[500px] flex flex-col animate-in slide-in-from-bottom-10 zoom-in-95 duration-300 shadow-2xl shadow-black/80 rounded-3xl border border-zinc-700 overflow-hidden bg-zinc-900/95 backdrop-blur-xl">
-      <div className="bg-zinc-950 border-b border-zinc-800 p-4 flex justify-between items-center">
+    <div ref={containerRef} className="fixed bottom-24 right-4 md:right-8 z-[60] w-[calc(100vw-2rem)] md:w-96 md:max-w-sm h-[500px] flex flex-col animate-in slide-in-from-bottom-10 zoom-in-95 duration-300 shadow-2xl shadow-black/80 rounded-3xl border border-zinc-700 overflow-hidden bg-zinc-950/95 backdrop-blur-xl max-h-[75vh]">
+      <div className="bg-zinc-950 border-b border-zinc-800 p-3 flex justify-between items-center">
            <div className="flex items-center gap-2">
                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-               <h3 className="text-white font-bold flex items-center gap-2 text-sm tracking-wider"><MessageSquareCode size={16} className="text-emerald-500"/> CLAN COMMS</h3>
+               <h3 className="text-white font-bold flex items-center gap-2 text-xs tracking-wider"><MessageSquareCode size={14} className="text-emerald-500"/> CLAN COMMS</h3>
            </div>
-           <button onClick={onClose} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white"><Minimize2 size={18}/></button>
+           <button onClick={onClose} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white"><Minimize2 size={16}/></button>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-black/20" ref={scrollRef}>
-           {messages.length === 0 && <div className="text-center text-zinc-600 text-xs mt-10">Start the chatter...</div>}
-           {messages.map(msg => {
-             const isMe = msg.uid === currentUser.uid;
-             return (
-               <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
-                  <img src={msg.avatar} className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 object-cover flex-shrink-0"/>
-                  <div className={`max-w-[75%] p-3 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-emerald-700 text-white rounded-tr-sm' : 'bg-zinc-800 text-zinc-200 rounded-tl-sm'}`}>
-                     {!isMe && <p className="text-[10px] font-bold text-zinc-400 mb-1">{msg.displayName}</p>}
-                     {msg.image ? (
-                         <img src={msg.image} className="rounded-lg w-full h-auto border border-white/10" />
-                     ) : (
-                         <p className="leading-snug break-words">{msg.text}</p>
-                     )}
-                  </div>
+      
+      <div className="flex-1 overflow-y-auto p-3 space-y-4 bg-black/20" ref={scrollRef}>
+           {messages.length === 0 && <div className="text-center text-zinc-600 text-[10px] mt-10 uppercase tracking-widest">Frequency Open...</div>}
+           {messages.map(msg => (
+               <SwipeableMessage 
+                    key={msg.id} 
+                    msg={msg} 
+                    isMe={msg.uid === currentUser.uid}
+                    activeReactionId={activeReactionId}
+                    onTriggerOptions={(id) => setActiveReactionId(id)}
+                    toggleReaction={toggleReaction}
+                    setReplyTo={setReplyTo}
+                    setActiveReactionId={setActiveReactionId}
+               />
+           ))}
+           {isSending && <div className="flex justify-center"><Loader2 size={12} className="text-zinc-600 animate-spin"/></div>}
+      </div>
+
+      {/* STICKER HUB (Slide Up) */}
+      {showStickerHub && (
+          <div className="bg-zinc-900 border-t border-zinc-800 p-3 h-40 flex flex-col animate-in slide-in-from-bottom-10">
+              <div className="flex justify-between items-center mb-2 px-1">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Vault</span>
+                  <button onClick={() => stickerInputRef.current.click()} className="text-[10px] flex items-center gap-1 text-emerald-500 hover:text-white transition font-bold bg-emerald-500/10 px-2 py-0.5 rounded"><Plus size={10}/> UPLOAD</button>
+                  <input type="file" ref={stickerInputRef} className="hidden" accept="image/*" onChange={handleStickerUpload}/>
+              </div>
+              <div className="grid grid-cols-5 gap-2 overflow-y-auto custom-scrollbar">
+                  {savedStickers.map(s => (
+                      <button key={s.id} onClick={() => sendToDb({ type: 'sticker', content: s.url })} className="hover:bg-zinc-800 p-1 rounded-lg transition flex items-center justify-center aspect-square">
+                          <img src={s.url} className="w-full h-full object-contain" />
+                      </button>
+                  ))}
+              </div>
+          </div>
+      )}
+
+      {/* TYPING BAR (Sticky Bottom) */}
+      <div className="bg-zinc-900 border-t border-zinc-800 pb-safe">
+           {replyTo && (
+               <div className="bg-zinc-800/50 px-3 py-1.5 flex justify-between items-center border-b border-zinc-700/50 animate-in slide-in-from-bottom-2">
+                   <div className="border-l-2 border-emerald-500 pl-2">
+                       <p className="text-emerald-500 text-[10px] font-bold">Reply to {replyTo.displayName}</p>
+                       <p className="text-zinc-400 text-[10px] truncate max-w-[200px]">{replyTo.text || 'Media'}</p>
+                   </div>
+                   <button onClick={() => setReplyTo(null)}><X size={14} className="text-zinc-500 hover:text-white"/></button>
                </div>
-             )
-           })}
+           )}
+
+           <form onSubmit={(e) => { e.preventDefault(); sendToDb({ text: msgText }); }} className="p-2 flex gap-2 items-end">
+               <button type="button" onClick={() => fileInputRef.current.click()} className="text-zinc-400 hover:text-white p-2 bg-zinc-800 rounded-xl transition active:scale-95"><ImageIcon size={18}/></button>
+               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload}/>
+               
+               <div className="flex-1 bg-zinc-950 border border-zinc-700 rounded-2xl px-3 py-2 flex items-center focus-within:border-emerald-500 transition">
+                   <input 
+                     autoFocus
+                     className="bg-transparent text-white text-sm w-full outline-none placeholder:text-zinc-600" 
+                     placeholder="Data entry..." 
+                     value={msgText} 
+                     onChange={e => setMsgText(e.target.value)}
+                   />
+                   <button type="button" onClick={() => setShowStickerHub(!showStickerHub)} className={`ml-1 transition ${showStickerHub ? 'text-emerald-500' : 'text-zinc-500 hover:text-white'}`}><Sticker size={18}/></button>
+               </div>
+               
+               <button disabled={isSending} className={`p-2 rounded-xl transition shadow-lg ${msgText.trim() || isSending ? 'bg-emerald-600 text-white hover:scale-105 active:scale-95' : 'bg-zinc-800 text-zinc-500'}`}>
+                   <Send size={18} />
+               </button>
+           </form>
       </div>
-      <form onSubmit={sendMessage} className="p-3 bg-zinc-950 border-t border-zinc-800 flex gap-2 items-center">
-           <button type="button" onClick={() => fileInputRef.current.click()} className="text-zinc-400 hover:text-white p-2"><ImageIcon size={20}/></button>
-           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload}/>
-           <input autoFocus className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white text-sm focus:border-emerald-500 outline-none" placeholder="Message..." value={msgText} onChange={e => setMsgText(e.target.value)}/>
-           <button disabled={isSending} className="bg-emerald-600 text-white p-3 rounded-xl"><Send size={18}/></button>
-      </form>
     </div>
   );
 };
 
+// ANNOUNCEMENTS WIDGET
 const AnnouncementsWidget = ({ announcements, isAdmin, logActivity }) => {
     const [text, setText] = useState('');
     const postAnnouncement = async (e) => { e.preventDefault(); if(!text) return; await addDoc(collection(db, COLLECTION_ANNOUNCEMENTS), { text, createdAt: serverTimestamp(), active: true }); logActivity('Posted announcement'); setText(''); };
@@ -216,6 +454,7 @@ const AnnouncementsWidget = ({ announcements, isAdmin, logActivity }) => {
     );
 };
 
+// LOGIN SCREEN
 const LoginScreen = ({ onLogin, isAuthReady }) => {
   const [mode, setMode] = useState('login'); 
   const [loginCreds, setLoginCreds] = useState({ username: '', password: '' });
@@ -246,6 +485,7 @@ const LoginScreen = ({ onLogin, isAuthReady }) => {
        let assignedRole = '';
        if (regData.accessCode === ADMIN_CODE) assignedRole = 'admin';
        else if (regData.accessCode === STAFF_CODE) assignedRole = 'staff';
+       else if (regData.accessCode === TEMP_CODE) assignedRole = 'temp';
        else throw new Error("Invalid Code.");
 
        const cleanName = regData.name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -294,7 +534,7 @@ const LoginScreen = ({ onLogin, isAuthReady }) => {
             {LOGO_URL ? <img src={LOGO_URL} alt="Clan Yujo" className="w-full h-full object-cover"/> : <Hexagon className="text-white w-10 h-10" />}
           </div>
           <h1 className="text-4xl font-black text-white tracking-tighter mb-2">CLAN YUJO</h1>
-          <p className="text-zinc-400 text-sm uppercase tracking-widest">Production OS v5.3</p>
+          <p className="text-zinc-400 text-sm uppercase tracking-widest">Production OS v7.5</p>
         </div>
         <div className={`flex justify-center mb-6 text-xs font-bold ${isAuthReady ? 'text-emerald-500' : 'text-amber-500 animate-pulse'}`}>
              {isAuthReady ? <span className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20"><Wifi size={12}/> SYSTEMS ONLINE</span> : <span className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 rounded-full border border-amber-500/20"><RefreshCw size={12} className="animate-spin"/> ESTABLISHING LINK...</span>}
@@ -323,6 +563,7 @@ const LoginScreen = ({ onLogin, isAuthReady }) => {
   );
 };
 
+// MOVIE MANAGER
 const MovieNightAdmin = ({ logActivity }) => {
   const [movie, setMovie] = useState({ title: '', date: '', time: '', desc: '', image: '' });
   const [pollQ, setPollQ] = useState('');
@@ -379,6 +620,7 @@ const MovieNightAdmin = ({ logActivity }) => {
   );
 };
 
+// DASHBOARD WIDGETS
 const MovieDisplayWidget = ({ screening }) => {
   if (!screening) return <div className="bg-zinc-900/30 rounded-3xl border border-dashed border-zinc-800 p-10 text-center text-zinc-600 h-full flex flex-col items-center justify-center"><Film size={64} className="mx-auto mb-4 opacity-20"/><p className="font-bold tracking-widest text-sm">NO SIGNAL</p></div>;
   const bgImage = screening.image || `https://source.unsplash.com/random/800x600/?cinema,movie,dark`;
@@ -387,7 +629,7 @@ const MovieDisplayWidget = ({ screening }) => {
        <div className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:opacity-50 transition duration-1000 group-hover:scale-105" style={{ backgroundImage: `url(${bgImage})` }}></div>
        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent z-10"></div>
        <div className="p-8 relative z-20 flex flex-col h-full justify-end">
-          <div className="flex justify-between items-start mb-auto"><span className="bg-purple-600/90 backdrop-blur-md text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">Now Showing</span></div>
+          <div className="flex justify-between items-start mb-auto"><span className="bg-purple-600/90 backdrop-blur-md text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">Friday Movie Night</span></div>
           <h2 className="text-4xl lg:text-5xl font-black text-white mt-4 mb-2 drop-shadow-xl leading-tight">{screening.title}</h2>
           <div className="flex items-center gap-3 text-purple-300 font-mono text-sm mb-4 bg-black/40 w-fit px-3 py-1 rounded-lg border border-white/10 backdrop-blur-md"><Clock size={14}/> <span>{screening.time}</span></div>
           <p className="text-zinc-300 text-sm leading-relaxed max-w-lg line-clamp-3">{screening.desc}</p>
@@ -415,7 +657,8 @@ const PollWidget = ({ poll, currentUser, logActivity }) => {
   );
 };
 
-const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser }) => {
+// PROJECT TRACKER (WITH DATA LOGS & MOBILE FIXES)
+const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, setSuccessMessage }) => {
   const [view, setView] = useState('list'); 
   const [selectedProject, setSelectedProject] = useState(null);
   const [newProj, setNewProj] = useState({ title: '', type: 'Production', startDate: '', endDate: '', callTime: '', callLocation: '', assignments: {} });
@@ -432,6 +675,7 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser }) 
   const handleCreate = async (e) => { e.preventDefault(); await addDoc(collection(db, COLLECTION_PROJECTS), { ...newProj, progress: 0, status: 'Active', setbacks: [], dataLogs: [], createdAt: serverTimestamp() }); logActivity(`Initiated Operation: ${newProj.title}`); setView('list'); setNewProj({ title: '', type: 'Production', startDate: '', endDate: '', callTime: '', callLocation: '', assignments: {} }); };
   const handleAddSetback = async (text, project) => { const newSetback = { id: Date.now(), text, date: new Date().toISOString(), status: 'Active' }; const updatedSetbacks = [...(project.setbacks || []), newSetback]; await updateDoc(doc(db, COLLECTION_PROJECTS, project.id), { setbacks: updatedSetbacks }); logActivity(`Reported setback in ${project.title}`); };
 
+  // LOCK FOOTAGE LOGS
   const handleAddDataLog = async (e, project) => {
       e.preventDefault();
       const formData = new FormData(e.target);
@@ -440,9 +684,11 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser }) 
       await updateDoc(doc(db, COLLECTION_PROJECTS, project.id), { dataLogs: updatedLogs });
       e.target.reset();
   };
-  // Setback Success Feedback
   const [setbackSuccess, setSetbackSuccess] = useState(false);
   const onSetbackSubmit = async (e, project) => { e.preventDefault(); await handleAddSetback(e.target.setback.value, project); e.target.reset(); setSetbackSuccess(true); setTimeout(() => setSetbackSuccess(false), 2000); };
+
+  // Check if assigned
+  const isAssignedToProject = selectedProject ? Object.values(selectedProject.assignments || {}).includes(currentUser.uid) : false;
 
   if (view === 'create') return (
     <div className="bg-zinc-900 p-6 md:p-8 rounded-3xl border border-zinc-800 animate-in fade-in zoom-in-95">
@@ -464,32 +710,44 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser }) 
 
   if (view === 'details' && selectedProject) {
       const calculatedProgress = calculateProgress(selectedProject.startDate, selectedProject.endDate);
-      const isAssignedToProject = Object.values(selectedProject.assignments || {}).includes(currentUser.uid);
-      
       return (
       <div className="space-y-8 animate-in slide-in-from-right-10">
+          {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center gap-4 mb-6">
             <button onClick={() => setView('list')} className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition w-fit"><ArrowLeft size={20} /></button>
-            <div><h2 className="text-2xl md:text-3xl font-black text-white uppercase break-words">{selectedProject.title}</h2><div className="flex flex-wrap gap-3 mt-1 text-xs font-mono text-zinc-400"><span className="flex items-center gap-1"><MapPin size={12} className="text-emerald-500"/> {selectedProject.callLocation}</span><span className="flex items-center gap-1"><Clock size={12} className="text-purple-500"/> Call: {selectedProject.callTime}</span><span className="bg-zinc-800 px-2 rounded border border-zinc-700 text-white whitespace-nowrap">{selectedProject.type}</span></div></div>
+            <div>
+                <h2 className="text-2xl md:text-3xl font-black text-white uppercase break-words">{selectedProject.title}</h2>
+                <div className="flex flex-wrap gap-3 mt-1 text-xs font-mono text-zinc-400">
+                    <span className="flex items-center gap-1"><MapPin size={12} className="text-emerald-500"/> {selectedProject.callLocation}</span>
+                    <span className="flex items-center gap-1"><Clock size={12} className="text-purple-500"/> Call: {selectedProject.callTime}</span>
+                    <span className="bg-zinc-800 px-2 rounded border border-zinc-700 text-white whitespace-nowrap">{selectedProject.type}</span>
+                </div>
+            </div>
           </div>
+
+          {/* Progress */}
           <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800"><div className="flex justify-between text-xs font-bold text-zinc-400 uppercase mb-2"><span>Timeline Progress (Auto)</span><span>{calculatedProgress}%</span></div><div className="w-full bg-black h-4 rounded-full overflow-hidden border border-zinc-800 relative"><div className="bg-gradient-to-r from-emerald-500 to-blue-500 h-full transition-all duration-500" style={{ width: `${calculatedProgress}%` }}></div>{[25, 50, 75].map(p => <div key={p} className="absolute top-0 bottom-0 w-px bg-black/30" style={{left: `${p}%`}}></div>)}</div></div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-8">
+                 {/* Crew List */}
                  <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800"><h3 className="text-white font-bold flex items-center gap-2 mb-4"><Users className="text-purple-500"/> Assigned Crew</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{Object.entries(selectedProject.assignments || {}).map(([role, uid]) => { const user = users.find(u => u.uid === uid); if (!uid) return null; return (<div key={role} className="flex items-center gap-3 p-2 bg-black/40 rounded-lg border border-zinc-800"><div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0"><img src={user?.avatar} className="w-full h-full object-cover"/></div><div><p className="text-[10px] font-bold text-zinc-500 uppercase">{role}</p><p className="text-sm text-white font-bold">{user?.displayName || 'Unknown'}</p></div></div>) })}</div></div>
                  
+                 {/* DATA LOGS (NEW) */}
                  <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800">
                     <h3 className="text-white font-bold flex items-center gap-2 mb-4"><HardDrive className="text-blue-500"/> Footage & Data Logs</h3>
                     <div className="space-y-2 mb-4 max-h-64 overflow-y-auto custom-scrollbar pr-2">
                         {(selectedProject.dataLogs || []).map(log => (
                             <div key={log.id} className="p-3 bg-black/40 rounded-lg border border-blue-900/30 flex justify-between items-center">
-                                <div><p className="text-sm font-bold text-white flex items-center gap-2"><CheckCircle size={12} className="text-emerald-500"/> {log.cardId} → {log.location}</p><p className="text-xs text-zinc-500">{log.notes}</p></div>
-                                <div className="text-right"><span className="block text-[10px] font-bold text-blue-400">{log.copiedBy}</span><span className="text-[10px] font-mono text-zinc-600">{new Date(log.timestamp).toLocaleDateString()}</span></div>
+                                <div>
+                                    <p className="text-sm font-bold text-white flex items-center gap-2"><CheckCircle size={12} className="text-emerald-500"/> {log.cardId} → {log.location}</p>
+                                    <p className="text-xs text-zinc-500">{log.notes}</p>
+                                </div>
+                                <span className="text-[10px] font-mono text-zinc-600">{new Date(log.timestamp).toLocaleDateString()}</span>
                             </div>
                         ))}
                         {(!selectedProject.dataLogs || selectedProject.dataLogs.length === 0) && <p className="text-zinc-600 text-sm italic">No data dumps logged.</p>}
                     </div>
-                    {/* DATA LOG FORM: Locked for non-assigned crew */}
                     {(isAssignedToProject || isAdmin) ? (
                         <form onSubmit={(e) => handleAddDataLog(e, selectedProject)} className="grid grid-cols-12 gap-2 pt-2 border-t border-zinc-800">
                             <input name="cardId" className="col-span-3 bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-white" placeholder="Card A01" required/>
@@ -497,17 +755,14 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser }) 
                             <input name="notes" className="col-span-4 bg-zinc-950 border border-zinc-700 rounded p-2 text-xs text-white" placeholder="Notes..."/>
                             <button className="col-span-1 bg-blue-600 text-white rounded flex items-center justify-center"><Save size={14}/></button>
                         </form>
-                    ) : (
-                        <div className="pt-2 border-t border-zinc-800 text-center text-xs text-zinc-500 italic"><Lock size={12} className="inline mr-1"/> Only assigned crew can log footage.</div>
-                    )}
+                    ) : (<div className="pt-2 border-t border-zinc-800 text-center text-xs text-zinc-500 italic"><Lock size={12} className="inline mr-1"/> Only assigned crew can log footage.</div>)}
                  </div>
               </div>
 
               <div className="bg-red-900/10 p-6 rounded-2xl border border-red-500/20"><h3 className="text-red-400 font-bold flex items-center gap-2 mb-4"><AlertTriangle size={16}/> Setbacks & Blockers</h3><div className="space-y-2 mb-4 max-h-64 overflow-y-auto custom-scrollbar pr-2">{(selectedProject.setbacks || []).map((sb, idx) => (<div key={idx} className="p-3 bg-black/40 rounded-lg border border-red-500/10"><p className="text-sm text-white font-medium">{sb.text}</p><p className="text-[10px] text-zinc-500 mt-1">{new Date(sb.date).toLocaleDateString()}</p></div>))}{(!selectedProject.setbacks || selectedProject.setbacks.length === 0) && <p className="text-zinc-600 text-sm italic text-center py-4">Operation smooth.</p>}</div>
                  {isAdmin && (
                      <form onSubmit={(e) => onSetbackSubmit(e, selectedProject)} className="flex gap-2">
-                         <input name="setback" className="flex-1 bg-zinc-950 border border-red-900/30 rounded p-2 text-xs text-white focus:border-red-500 outline-none" placeholder="Report Issue..." required/>
-                         <button className={`rounded px-3 flex items-center justify-center transition-all ${setbackSuccess ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{setbackSuccess ? <CheckCircle size={14}/> : <Plus size={14}/>}</button>
+                         <input name="setback" className="flex-1 bg-zinc-950 border border-red-900/30 rounded p-2 text-xs text-white focus:border-red-500 outline-none" placeholder="Report Issue..." required/><button className={`rounded px-3 flex items-center justify-center transition-all ${setbackSuccess ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>{setbackSuccess ? <CheckCircle size={14}/> : <Plus size={14}/>}</button>
                      </form>
                  )}
               </div>
@@ -516,6 +771,7 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser }) 
   );
   }
 
+  // Default List View
   return (
     <div className="space-y-8 animate-in fade-in">
        <div className="flex justify-between items-center"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Briefcase className="text-amber-500"/> MISSION LOG</h2>{isAdmin && <button onClick={()=>setView('create')} className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition flex items-center gap-2"><Plus size={16}/> New Op</button>}</div>
@@ -576,18 +832,67 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity }) 
   );
 };
 
-const ProfileSettings = ({currentUser, logActivity}) => {
+const ProfileSettings = ({currentUser, logActivity, setSuccessMessage}) => {
   const [data, setData] = useState(currentUser || { displayName: '', bio: '', avatar: '' });
   const [showAv, setShowAv] = useState(false);
-  useEffect(() => { if (currentUser) setData(currentUser); }, [currentUser]);
-  const save = async (e) => { e.preventDefault(); await updateDoc(doc(db, COLLECTION_USERS, currentUser.uid), {displayName: data.displayName, bio: data.bio || '', avatar: data.avatar}); logActivity(`Updated profile`); setShowAv(false); };
+
+  useEffect(() => {
+    if (currentUser) setData(currentUser);
+  }, [currentUser]);
+
+  const save = async (e) => { 
+    e.preventDefault(); 
+    await updateDoc(doc(db, COLLECTION_USERS, currentUser.uid), {
+      displayName: data.displayName, 
+      bio: data.bio || '', 
+      avatar: data.avatar
+    }); 
+    logActivity(`Updated profile`); 
+    setSuccessMessage("IDENTITY UPDATED");
+    setTimeout(() => setSuccessMessage(""), 2000);
+    setShowAv(false); 
+  };
+
   if (!data) return <div className="text-zinc-500">Loading profile...</div>;
+
   return (
-    <div className="max-w-2xl mx-auto bg-zinc-900 p-10 rounded-3xl border border-zinc-800"><div className="flex items-center gap-6 mb-8"><div className="w-24 h-24 rounded-2xl bg-white border-4 border-zinc-800 overflow-hidden shadow-2xl relative"><img src={data.avatar} className="w-full h-full object-cover"/></div><div><h3 className="text-white font-bold text-xl">{data.displayName}</h3><button onClick={()=>setShowAv(!showAv)} className="text-purple-400 text-xs font-bold uppercase tracking-wider hover:text-white mt-2">Change Appearance</button></div></div>{showAv && <AvatarSelector currentAvatar={data.avatar} onSelect={(url) => { setData({...data, avatar: url}); setShowAv(false); }} />}<form onSubmit={save} className="space-y-6 mt-6"><div><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Codename</label><input value={data.displayName || ''} onChange={e=>setData({...data, displayName:e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none"/></div><div><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Bio / Status</label><textarea value={data.bio || ''} onChange={e=>setData({...data, bio:e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none h-32 resize-none"/></div><button className="bg-white text-black px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-purple-50 transition w-full">Save Identity</button></form></div>
+    <div className="max-w-2xl mx-auto bg-zinc-900 p-10 rounded-3xl border border-zinc-800">
+       <div className="flex items-center gap-6 mb-8">
+           <div className="w-24 h-24 rounded-2xl bg-white border-4 border-zinc-800 overflow-hidden shadow-2xl relative">
+              <img src={data.avatar} className="w-full h-full object-cover"/>
+           </div>
+           <div>
+              <h3 className="text-white font-bold text-xl">{data.displayName}</h3>
+              <button onClick={()=>setShowAv(!showAv)} className="text-purple-400 text-xs font-bold uppercase tracking-wider hover:text-white mt-2">Change Appearance</button>
+           </div>
+       </div>
+       {showAv && <AvatarSelector currentAvatar={data.avatar} onSelect={(url) => { setData({...data, avatar: url}); setShowAv(false); }} />}
+       
+       <form onSubmit={save} className="space-y-6 mt-6">
+         <div>
+            <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Codename</label>
+            <input 
+              value={data.displayName || ''} 
+              onChange={e=>setData({...data, displayName:e.target.value})} 
+              className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none"
+            />
+         </div>
+         <div>
+            <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Bio / Status</label>
+            <textarea 
+              value={data.bio || ''} 
+              onChange={e=>setData({...data, bio:e.target.value})} 
+              className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none h-32 resize-none"
+            />
+         </div>
+         <button className="bg-white text-black px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-purple-50 transition w-full">Save Identity</button>
+       </form>
+    </div>
   );
 };
 
 const TeamManager = ({ users, currentUser, logActivity }) => {
+  // REMOVED ADMIN CHECK: Everyone can see the team now.
   const handleDelete = async (user) => { if(confirm(`Remove ${user.displayName}?`)) { await deleteDoc(doc(db, COLLECTION_USERS, user.uid)); logActivity(`Removed user: ${user.displayName}`); }};
   return (
     <div className="max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Users className="text-amber-500" /> CLAN ROSTER</h2><span className="text-xs text-zinc-500 bg-zinc-900 px-4 py-2 rounded-full border border-zinc-800 font-bold uppercase tracking-widest">Active: {users.length}</span></div><div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">{users.map(u => (<div key={u.uid} className="bg-zinc-900/50 p-6 rounded-3xl border border-zinc-800 hover:border-purple-500/30 transition group flex flex-col items-center text-center gap-4"><div className="w-20 h-20 rounded-full bg-black border-2 border-zinc-700 overflow-hidden group-hover:scale-110 transition shadow-xl"><img src={u.avatar || `https://api.dicebear.com/9.x/avataaars/svg?seed=${u.uid}`} className="w-full h-full object-cover"/></div><div><p className="text-white font-black text-lg flex items-center justify-center gap-2">{u.displayName || 'Unknown Agent'}{u.uid === currentUser.uid && <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded">YOU</span>}</p><p className="text-xs text-purple-400 font-mono mt-1 uppercase tracking-widest">{u.role || 'N/A'}</p><p className="text-xs text-zinc-600 mt-2">@{u.username || '---'}</p></div>{currentUser.role === 'admin' && u.uid !== currentUser.uid && (<button onClick={() => handleDelete(u)} className="mt-2 p-2 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition w-full flex justify-center"><Trash2 size={16} /></button>)}</div>))}</div></div>
@@ -602,8 +907,8 @@ const NexusMenu = ({ isOpen, toggle, setActiveTab, handleLogout, role, openChat,
   return (
     <div ref={menuRef} className="fixed bottom-24 left-1/2 transform -translate-x-1/2 w-[90%] max-w-[250px] z-50 flex flex-col gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200 lg:bottom-10 lg:left-24 lg:transform-none">
        <div className="bg-zinc-900/95 backdrop-blur-xl border border-zinc-700 rounded-2xl p-2 shadow-2xl flex flex-col gap-1">
-          <button onClick={() => { openChat(); toggle(); }} className="flex items-center gap-3 text-emerald-400 hover:text-emerald-300 hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold relative"><MessageCircle size={18}/> Clan Comms{hasUnread && <span className="absolute right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}</button>
-          <button onClick={() => { setActiveTab('team'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Users size={18}/> Clan Members</button>
+          {role !== 'temp' && (<button onClick={() => { openChat(); toggle(); }} className="flex items-center gap-3 text-emerald-400 hover:text-emerald-300 hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold relative"><MessageCircle size={18}/> Clan Comms{hasUnread && <span className="absolute right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}</button>)}
+          {role !== 'temp' && (<button onClick={() => { setActiveTab('team'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Users size={18}/> Clan Members</button>)}
           <button onClick={() => { setActiveTab('profile'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Settings size={18}/> My Identity</button>
           {role === 'admin' && <button onClick={() => { setActiveTab('cinema_admin'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Video size={18} className="text-amber-400"/> Cinema Control</button>}
           <div className="h-px bg-zinc-800 my-1"></div>
@@ -621,6 +926,7 @@ const App = () => {
   const [isNexusOpen, setIsNexusOpen] = useState(false); 
   const [showChat, setShowChat] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   
   const [bookings, setBookings] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -641,7 +947,7 @@ const App = () => {
              else { localStorage.removeItem('clan_yujo_uid'); if (!auth.currentUser) await signInAnonymously(auth); }
         } else { if (!auth.currentUser) await signInAnonymously(auth); }
     };
-    const unsubscribe = onAuthStateChanged(auth, (user) => { if (user) { setIsAuthReady(true); if (!currentUser) { const storedUid = localStorage.getItem('clan_yujo_uid'); } } else { initAuth(); } });
+    const unsubscribe = onAuthStateChanged(auth, (user) => { if (user) { setIsAuthReady(true); if (!currentUser) { const storedUid = localStorage.getItem('clan_yujo_uid'); if (storedUid) initAuth(); } } else { initAuth(); } });
     return () => unsubscribe();
   }, []);
 
@@ -691,16 +997,26 @@ const App = () => {
            <span className="font-black text-white text-xl tracking-tighter">CLAN YUJO</span>
         </div>
         <nav className="flex-1 py-8 space-y-2 px-4">
-          {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Headquarters' },{ id: 'bookings', icon: Clock, label: 'Armory / Labs' },{ id: 'projects', icon: Film, label: 'Missions' }].map(item => (
+          {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Headquarters' },{ id: 'bookings', icon: Clock, label: 'Armory / Labs', restricted: true },{ id: 'projects', icon: Film, label: 'Missions' }].map(item => (
+            (!item.restricted || currentUser.role !== 'temp') && (
             <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center p-4 rounded-2xl transition-all duration-300 group ${activeTab === item.id ? 'bg-white text-black shadow-lg shadow-white/10 scale-[1.02]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-white'}`}><item.icon size={20} className={activeTab === item.id ? 'text-black' : 'group-hover:text-purple-400 transition'} /><span className="ml-4 font-bold text-sm tracking-wide">{item.label}</span></button>
+            )
           ))}
         </nav>
-        <div className="p-4"><button onClick={() => setIsNexusOpen(!isNexusOpen)} className="w-full flex items-center justify-center p-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white transition-all duration-300 group border border-zinc-800 relative"><Grid size={20} className="text-purple-500 group-hover:scale-110 transition"/><span className="ml-3 font-bold text-sm tracking-wider">NEXUS MENU</span>{hasUnread && <span className="absolute top-4 right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}</button></div>
+        <div className="p-4"><button onClick={() => setIsNexusOpen(!isNexusOpen)} className="w-full flex items-center justify-center p-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white transition-all duration-300 group border border-zinc-800 relative"><Hexagon size={20} className="text-purple-500 group-hover:scale-110 transition"/><span className="ml-3 font-bold text-sm tracking-wider">NEXUS MENU</span>{hasUnread && <span className="absolute top-4 right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}</button></div>
       </div>
       <div className="lg:hidden fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm bg-zinc-950/90 backdrop-blur-2xl border border-zinc-800 rounded-full z-40 flex justify-around items-center p-1.5 shadow-2xl shadow-black/50">
-         {[{ id: 'dashboard', label: 'Home', icon: LayoutDashboard },{ id: 'bookings', label: 'Gear', icon: Clock }].map(item => (<button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3.5 rounded-full transition-all duration-300 relative group ${activeTab === item.id ? 'bg-white text-black shadow-lg scale-110' : 'text-zinc-500 hover:text-white'}`}><item.icon size={20} strokeWidth={2.5} /></button>))}
+         {[{ id: 'dashboard', label: 'Home', icon: LayoutDashboard },{ id: 'bookings', label: 'Gear', icon: Clock, restricted: true }].map(item => (
+            (!item.restricted || currentUser.role !== 'temp') ? (
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3.5 rounded-full transition-all duration-300 relative group ${activeTab === item.id ? 'bg-white text-black shadow-lg scale-110' : 'text-zinc-500 hover:text-white'}`}><item.icon size={20} strokeWidth={2.5} /></button>
+            ) : null
+         ))}
          <button onClick={() => setIsNexusOpen(!isNexusOpen)} className="p-4 rounded-full bg-zinc-900 text-white shadow-lg border border-zinc-700 relative transform hover:scale-110 transition active:scale-95"><Hexagon size={24} className="text-purple-500" fill="currentColor" fillOpacity={0.2} />{hasUnread && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-black animate-pulse"></span>}</button>
-         {[{ id: 'projects', label: 'Work', icon: Briefcase }, { id: 'team', label: 'Clan', icon: Users }].map(item => (<button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3.5 rounded-full transition-all duration-300 relative group ${activeTab === item.id ? 'bg-white text-black shadow-lg scale-110' : 'text-zinc-500 hover:text-white'}`}><item.icon size={20} strokeWidth={2.5} /></button>))}
+         {[{ id: 'projects', label: 'Work', icon: Briefcase }, { id: 'team', label: 'Clan', icon: Users, restricted: true }].map(item => (
+            (!item.restricted || currentUser.role !== 'temp') ? (
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3.5 rounded-full transition-all duration-300 relative group ${activeTab === item.id ? 'bg-white text-black shadow-lg scale-110' : 'text-zinc-500 hover:text-white'}`}><item.icon size={20} strokeWidth={2.5} /></button>
+            ) : null
+         ))}
       </div>
       <main className="flex-1 overflow-y-auto p-6 lg:p-10 relative bg-black scroll-smooth pb-32 lg:pb-10">
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5 pointer-events-none fixed"></div>
@@ -718,7 +1034,7 @@ const App = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-8">
                 <AnnouncementsWidget announcements={announcements} isAdmin={currentUser.role === 'admin'} logActivity={logActivity} />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:h-96"><MovieDisplayWidget screening={screenings[0]} /><PollWidget poll={polls[0]} currentUser={currentUser} logActivity={logActivity} /></div>
+                {currentUser.role !== 'temp' && (<div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:h-96"><MovieDisplayWidget screening={screenings[0]} /><PollWidget poll={polls[0]} currentUser={currentUser} logActivity={logActivity} /></div>)}
                 <div className="bg-zinc-900/30 rounded-3xl border border-zinc-800 p-6 lg:p-8 backdrop-blur-sm">
                     <div className="flex items-center justify-between mb-6"><h3 className="font-black text-white flex items-center gap-3 text-lg tracking-wide"><Activity className="text-blue-500"/> DATA STREAM</h3><span className="text-[10px] font-mono text-zinc-500 bg-black/50 px-2 py-1 rounded uppercase">Live</span></div>
                     <div className="space-y-0 relative pl-4 border-l border-zinc-800/50">{logs.slice(0,6).map((l, i) => (<div key={l.id} className="relative pl-6 pb-8 last:pb-0 group"><div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-zinc-950 border-2 border-zinc-700 group-hover:border-purple-500 group-hover:scale-125 transition z-10"></div><div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3"><span className="text-xs font-mono text-zinc-600">{l.timestamp ? new Date(l.timestamp.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}</span><span className="text-white font-bold text-sm hover:text-purple-400 transition cursor-default">{l.userName}</span><span className="text-zinc-400 text-sm truncate">{l.action}</span></div></div>))}</div>
@@ -729,12 +1045,22 @@ const App = () => {
               </div>
             </div>
           )}
-          {activeTab === 'bookings' && <BookingSystem currentUser={currentUser} bookings={bookings} users={users} requests={requests} logActivity={logActivity} />}
+          {activeTab === 'bookings' && currentUser.role !== 'temp' && <BookingSystem currentUser={currentUser} bookings={bookings} users={users} requests={requests} logActivity={logActivity} />}
           {activeTab === 'projects' && <ProjectTracker projects={projects} users={users} isAdmin={currentUser.role==='admin'} logActivity={logActivity} currentUser={currentUser} />}
-          {activeTab === 'team' && <TeamManager users={users} currentUser={currentUser} logActivity={logActivity} />}
-          {activeTab === 'profile' && <ProfileSettings currentUser={currentUser} logActivity={logActivity} />}
+          {activeTab === 'team' && currentUser.role !== 'temp' && <TeamManager users={users} currentUser={currentUser} logActivity={logActivity} />}
+          {activeTab === 'profile' && <ProfileSettings currentUser={currentUser} logActivity={logActivity} setSuccessMessage={setSuccessMessage} />}
           {activeTab === 'cinema_admin' && currentUser.role === 'admin' && <MovieNightAdmin logActivity={logActivity} />}
         </div>
+        {successMessage && (
+             <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[100] animate-in slide-in-from-top-5 fade-in duration-300">
+                <div className="bg-zinc-900 border border-zinc-700 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3">
+                    <div className="w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center">
+                        <CheckCircle size={14} className="text-black" />
+                    </div>
+                    <span className="font-bold text-sm tracking-wide">{successMessage}</span>
+                </div>
+             </div>
+        )}
         <NexusMenu isOpen={isNexusOpen} toggle={() => setIsNexusOpen(!isNexusOpen)} setActiveTab={setActiveTab} handleLogout={handleLogout} role={currentUser.role} openChat={() => setShowChat(true)} hasUnread={hasUnread} />
         {showChat && <GlobalChat currentUser={currentUser} onClose={() => setShowChat(false)} />}
       </main>
