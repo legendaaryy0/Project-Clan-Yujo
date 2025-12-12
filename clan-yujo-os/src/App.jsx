@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createRoot } from 'react-dom/client';
 import { 
   Calendar, Clock, Users, Video, MonitorPlay, Mic2, Bell, LogOut, Plus, 
   CheckCircle, AlertCircle, Film, LayoutDashboard, Settings, MessageSquare, 
@@ -18,7 +19,7 @@ import {
   orderBy, updateDoc, deleteDoc, limit, serverTimestamp, where, getDocs, getDoc 
 } from 'firebase/firestore';
 
-// --- 1. FIREBASE CONFIGURATION (LOCKED) ---
+// --- 1. FIREBASE CONFIGURATION ---
 const firebaseConfig = {
   apiKey: "AIzaSyBZUDfgKkoXIJtC8H2cef8dzhHJlhNvrYE",
   authDomain: "clan-yujo.firebaseapp.com",
@@ -118,7 +119,26 @@ const compressImage = (file, quality = 0.7, maxWidth = 1080) => {
 
 // --- COMPONENTS ---
 
-// AGENT DOSSIER
+// 1. UTILITY & SIMPLE COMPONENTS
+
+const NexusMenu = ({ isOpen, toggle, setActiveTab, handleLogout, role, openChat, hasUnread }) => {
+  const menuRef = useRef(null);
+  useEffect(() => { const handleClickOutside = (event) => { if (isOpen && menuRef.current && !menuRef.current.contains(event.target)) { toggle(); } }; document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside); }, [isOpen, toggle]);
+  if (!isOpen) return null;
+  return (
+    <div ref={menuRef} className="fixed bottom-24 left-1/2 transform -translate-x-1/2 w-[90%] max-w-[250px] z-50 flex flex-col gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200 lg:bottom-10 lg:left-24 lg:transform-none">
+       <div className="bg-zinc-900/95 backdrop-blur-xl border border-zinc-700 rounded-2xl p-2 shadow-2xl flex flex-col gap-1">
+          {role !== 'temp' && (<button onClick={() => { openChat(); toggle(); }} className="flex items-center gap-3 text-emerald-400 hover:text-emerald-300 hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold relative"><MessageCircle size={18}/> Clan Comms{hasUnread && <span className="absolute right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}</button>)}
+          {role !== 'temp' && (<button onClick={() => { setActiveTab('team'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Users size={18}/> Clan Members</button>)}
+          <button onClick={() => { setActiveTab('profile'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Settings size={18}/> My Identity</button>
+          {role === 'admin' && <button onClick={() => { setActiveTab('cinema_admin'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Video size={18} className="text-amber-400"/> Cinema Control</button>}
+          <div className="h-px bg-zinc-800 my-1"></div>
+          <button onClick={handleLogout} className="flex items-center gap-3 text-red-400 hover:bg-red-900/20 px-4 py-3 rounded-xl transition text-sm font-bold"><LogOut size={18}/> Disconnect</button>
+       </div>
+    </div>
+  );
+};
+
 const AgentDossier = ({ userId, users, onClose }) => {
     const user = users.find(u => u.uid === userId);
     if (!user) return null;
@@ -155,7 +175,6 @@ const AgentDossier = ({ userId, users, onClose }) => {
     );
 };
 
-// LOGIN SCREEN
 const LoginScreen = ({ onLogin, isAuthReady }) => {
   const [mode, setMode] = useState('login'); 
   const [loginCreds, setLoginCreds] = useState({ username: '', password: '' });
@@ -681,6 +700,285 @@ const ProfileSettings = ({currentUser, logActivity, setSuccessMessage}) => {
   );
 };
 
+const TeamManager = ({ users, currentUser, logActivity, onShowProfile }) => {
+  const handleDelete = async (user) => { if(confirm(`Remove ${user.displayName}?`)) { await deleteDoc(doc(db, COLLECTION_USERS, user.uid)); logActivity(`Removed user: ${user.displayName}`); }};
+  return (
+    <div className="max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Users className="text-amber-500" /> CLAN ROSTER</h2><span className="text-xs text-zinc-500 bg-zinc-900 px-4 py-2 rounded-full border border-zinc-800 font-bold uppercase tracking-widest">Active: {users.length}</span></div><div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">{users.map(u => (<div key={u.uid} className="bg-zinc-900/50 p-6 rounded-3xl border border-zinc-800 hover:border-purple-500/30 transition group flex flex-col items-center text-center gap-4 relative"><div className="w-20 h-20 rounded-full bg-black border-2 border-zinc-700 overflow-hidden group-hover:scale-110 transition shadow-xl cursor-pointer" onClick={() => onShowProfile(u.uid)}><img src={u.avatar || `https://api.dicebear.com/9.x/avataaars/svg?seed=${u.uid}`} className="w-full h-full object-cover"/></div><div><p className="text-white font-black text-lg flex items-center justify-center gap-2 cursor-pointer hover:text-emerald-400 transition" onClick={() => onShowProfile(u.uid)}>{u.displayName || 'Unknown Agent'}{u.uid === currentUser.uid && <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded">YOU</span>}</p><p className="text-xs text-purple-400 font-mono mt-1 uppercase tracking-widest">{u.role || 'N/A'}</p><p className="text-xs text-zinc-600 mt-2">@{u.username || '---'}</p></div>{currentUser.role === 'admin' && u.uid !== currentUser.uid && (<button onClick={() => handleDelete(u)} className="mt-2 p-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition w-full flex justify-center"><Trash2 size={16} /></button>)}</div>))}</div></div>
+  );
+};
+
+// --- UPDATED BOOKING SYSTEM (ARMORY & LABS) ---
+const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, productionStatus }) => {
+  const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
+  const [requestingResId, setRequestingResId] = useState(null); 
+  const [requestMessage, setRequestMessage] = useState('');
+  
+  // New Booking Modal State
+  const [bookingModal, setBookingModal] = useState(null); // { resource, dateStr }
+  const [bookingPurpose, setBookingPurpose] = useState('Learning');
+  const [bookingDesc, setBookingDesc] = useState('');
+
+  const bookingsForDate = useMemo(() => bookings.filter(b => b.dateStr === selectedDate && b.status === 'active'), [bookings, selectedDate]);
+  
+  // Filter for requests sent TO Ray (admin only)
+  const adminRequests = useMemo(() => {
+      if (currentUser.role !== 'admin') return [];
+      return requests.filter(r => r.ownerId === 'RAY_ADMIN' && r.status === 'pending');
+  }, [requests, currentUser.role]);
+
+  // COOLDOWN LOGIC
+  const checkCooldown = (resourceId, userId, targetDateStr) => {
+      // Admins bypass cooldown
+      if (currentUser.role === 'admin' || currentUser.role === 'staff') return true;
+
+      const target = new Date(targetDateStr);
+      const oneDayBefore = new Date(target); oneDayBefore.setDate(target.getDate() - 1);
+      const twoDaysBefore = new Date(target); twoDaysBefore.setDate(target.getDate() - 2);
+
+      const str1 = formatDate(oneDayBefore);
+      const str2 = formatDate(twoDaysBefore);
+
+      const bookedYesterday = bookings.some(b => b.userId === userId && b.resourceId === resourceId && b.dateStr === str1 && b.status === 'active');
+      const bookedDayBefore = bookings.some(b => b.userId === userId && b.resourceId === resourceId && b.dateStr === str2 && b.status === 'active');
+
+      if (bookedYesterday && bookedDayBefore) {
+          return false; // Blocked
+      }
+      return true; // Allowed
+  };
+
+  const initiateBooking = (resource) => {
+      if (!productionStatus) return;
+      
+      const isAllowed = checkCooldown(resource.id, currentUser.uid, selectedDate);
+      if (!isAllowed) {
+          alert("COOLDOWN ACTIVE: You have booked this asset for 2 consecutive days. Take a 24h break or ask an Admin to override.");
+          return;
+      }
+
+      // Open Modal
+      setBookingModal({ resource, dateStr: selectedDate });
+      setBookingPurpose('Learning');
+      setBookingDesc('');
+  };
+
+  const confirmBooking = async (e) => {
+      e.preventDefault();
+      if (!bookingModal) return;
+
+      await addDoc(collection(db, COLLECTION_BOOKINGS), { 
+          resourceId: bookingModal.resource.id, 
+          resourceName: bookingModal.resource.name, 
+          userId: currentUser.uid, 
+          userName: currentUser.displayName, 
+          startTime: serverTimestamp(), 
+          status: 'active', 
+          dateStr: bookingModal.dateStr,
+          purpose: bookingPurpose,
+          description: bookingDesc
+      }); 
+      
+      logActivity(`Booked ${bookingModal.resource.name} for ${bookingPurpose}`);
+      setBookingModal(null);
+  };
+
+  const handleRelease = async (bookingId, resName) => {
+      await deleteDoc(doc(db, COLLECTION_BOOKINGS, bookingId)); 
+      logActivity(`Released ${resName}`); 
+  };
+
+  const sendRequest = async (resource, booking) => {
+    if(!requestMessage.trim()) return;
+    const ownerId = booking ? booking.userId : 'RAY_ADMIN'; // Default to Ray for empty edit bay
+    await addDoc(collection(db, COLLECTION_REQUESTS), { bookingId: booking ? booking.id : 'DIRECT_REQ', resourceId: resource.id, resourceName: resource.name, requesterId: currentUser.uid, requesterName: currentUser.displayName, requesterAvatar: currentUser.avatar, ownerId: ownerId, message: requestMessage, status: 'pending', timestamp: serverTimestamp() }); setRequestingResId(null); setRequestMessage(''); alert(`Request sent to ${resource.owner || 'Occupant'}!`);
+  };
+
+  const handleHandover = async (request, booking) => { 
+      await updateDoc(doc(db, COLLECTION_BOOKINGS, booking.id), { userId: request.requesterId, userName: request.requesterName }); 
+      await updateDoc(doc(db, COLLECTION_REQUESTS, request.id), { status: 'approved' }); 
+      logActivity(`Handed over ${booking.resourceName}`); 
+  };
+
+  // ADMIN ACTION: Grant access to Edit Bay
+  const grantAccess = async (req) => {
+      // 1. Create a booking for the requester
+      await addDoc(collection(db, COLLECTION_BOOKINGS), {
+          resourceId: req.resourceId,
+          resourceName: req.resourceName,
+          userId: req.requesterId,
+          userName: req.requesterName,
+          startTime: serverTimestamp(),
+          status: 'active',
+          dateStr: selectedDate, // Grants access for TODAY/Selected Date
+          purpose: 'Approved Request',
+          description: req.message
+      });
+      // 2. Mark request as approved
+      await updateDoc(doc(db, COLLECTION_REQUESTS, req.id), { status: 'approved' });
+      logActivity(`Ray granted access to ${req.requesterName}`);
+  };
+
+  return (
+    <div className="space-y-8 relative">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
+          <h2 className="text-3xl font-black text-white flex items-center gap-3"><Clock className="text-purple-500" /> ARMORY & LABS</h2>
+          <div className="flex items-center gap-3 bg-zinc-900 p-2 rounded-xl border border-zinc-800">
+              <span className="text-xs text-zinc-500 pl-2 font-bold uppercase">Target Date</span>
+              <input type="date" value={selectedDate} min={formatDate(new Date())} onChange={(e) => setSelectedDate(e.target.value)} className="bg-black text-white border border-zinc-700 rounded-lg px-4 py-2 text-sm outline-none focus:border-purple-500"/>
+          </div>
+      </div>
+      
+      {!productionStatus && (
+          <div className="bg-amber-900/20 border border-amber-500/30 p-6 rounded-2xl mb-8 flex items-center justify-center gap-4 animate-pulse">
+              <Factory size={32} className="text-amber-500" />
+              <div>
+                  <h3 className="text-amber-500 font-black text-lg uppercase tracking-widest">Production Halted</h3>
+                  <p className="text-amber-200/60 text-xs">Armory access is currently locked by Administration.</p>
+              </div>
+          </div>
+      )}
+
+      {/* ADMIN INBOX (RAY'S REQUESTS) */}
+      {currentUser.role === 'admin' && adminRequests.length > 0 && (
+          <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-500/30 p-6 rounded-2xl mb-8 animate-in slide-in-from-top-4">
+              <h3 className="text-blue-400 font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><Unlock size={16}/> Clearance Requests (Ray)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {adminRequests.map(req => (
+                      <div key={req.id} className="bg-black/60 p-4 rounded-xl border border-blue-500/20 flex flex-col gap-3">
+                          <div className="flex items-center gap-3">
+                              <img src={req.requesterAvatar} className="w-8 h-8 rounded-full bg-zinc-800" />
+                              <div>
+                                  <p className="text-white font-bold text-sm">{req.requesterName}</p>
+                                  <p className="text-zinc-400 text-xs italic">"{req.message}"</p>
+                              </div>
+                          </div>
+                          <div className="flex gap-2 mt-auto">
+                              <button onClick={() => grantAccess(req)} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg transition uppercase tracking-wider">Grant Access</button>
+                              <button onClick={() => deleteDoc(doc(db, COLLECTION_REQUESTS, req.id))} className="px-3 bg-zinc-800 hover:bg-red-900/50 text-zinc-400 hover:text-red-400 rounded-lg transition"><X size={14}/></button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {RESOURCES.map(res => {
+          const activeBooking = bookingsForDate.find(b => b.resourceId === res.id);
+          const isMine = activeBooking?.userId === currentUser.uid;
+          const bookedByUser = activeBooking ? users.find(u => u.uid === activeBooking.userId) : null;
+          const pendingRequests = activeBooking && isMine ? requests.filter(r => r.bookingId === activeBooking.id && r.status === 'pending') : [];
+          
+          return (
+            <div key={res.id} className={`relative p-6 rounded-3xl border-2 transition-all duration-300 group ${!productionStatus ? 'opacity-50 grayscale' : ''} ${activeBooking ? 'bg-zinc-900/50 border-red-900/30' : 'bg-zinc-900 border-zinc-800 hover:border-purple-500/50'}`}>
+              <div className="flex justify-between items-start mb-6">
+                  <div className={`p-4 rounded-2xl ${activeBooking ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-400'}`}><res.icon size={28} /></div>
+                  {activeBooking ? <span className="px-3 py-1 bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest rounded-full animate-pulse border border-red-500/20">LOCKED</span> : <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-full border border-emerald-500/20">READY</span>}
+              </div>
+              <h3 className="text-xl font-bold text-white mb-1">{res.name}</h3>
+              <p className="text-xs text-zinc-500 mb-6 font-mono uppercase">{res.desc}</p>
+              
+              {activeBooking && (
+                  <div className="mb-6">
+                      <div className="bg-black/40 rounded-xl p-3 border border-zinc-800 flex flex-col gap-2">
+                          <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700"><img src={bookedByUser?.avatar} className="w-full h-full object-cover"/></div>
+                              <div>
+                                  <p className="text-[10px] text-zinc-500 uppercase font-bold">Operator</p>
+                                  <p className="text-sm font-bold text-white truncate">{bookedByUser?.displayName}</p>
+                              </div>
+                          </div>
+                          {activeBooking.purpose && (
+                              <div className="mt-1 pt-2 border-t border-zinc-800/50">
+                                  <span className="text-[9px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded uppercase font-bold">{activeBooking.purpose}</span>
+                                  <p className="text-xs text-zinc-300 mt-1 italic line-clamp-2">"{activeBooking.description}"</p>
+                              </div>
+                          )}
+                      </div>
+                      {isMine && pendingRequests.map(req => (<div key={req.id} className="mt-3 bg-amber-900/10 p-3 rounded-xl border border-amber-500/20"><p className="text-xs text-amber-200 mb-2 font-mono">REQ: "{req.message}"</p><button onClick={() => handleHandover(req, activeBooking)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg transition">AUTHORIZE HANDOVER</button></div>))}
+                  </div>
+              )}
+
+              <div className="mt-auto">
+                  {res.restricted ? (
+                      // RESTRICTED EDIT BAY LOGIC
+                      requestingResId === res.id ? (
+                          <div className="flex gap-2">
+                              <input autoFocus className="flex-1 bg-black text-white text-xs p-3 rounded-xl border border-zinc-700 outline-none focus:border-purple-500" placeholder={`Message ${res.owner}...`} value={requestMessage} onChange={e=>setRequestMessage(e.target.value)} disabled={!productionStatus}/>
+                              <button onClick={() => sendRequest(res, activeBooking)} className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-4 rounded-xl font-bold" disabled={!productionStatus}><Send size={14}/></button>
+                          </div>
+                      ) : (
+                          <button onClick={() => setRequestingResId(res.id)} disabled={!productionStatus || activeBooking} className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition flex items-center justify-center gap-2 ${activeBooking ? 'bg-zinc-900 text-zinc-600 cursor-not-allowed' : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'}`}>
+                              <Lock size={14}/> {activeBooking ? 'Occupied' : `Request ${res.owner}`}
+                          </button>
+                      )
+                  ) : (
+                      // STANDARD ARMORY LOGIC
+                      activeBooking ? (
+                          // If mine, allow release. If Admin, allow forced release (clears cooldown for user essentially).
+                          (isMine || currentUser.role === 'admin') ? 
+                              <button onClick={() => handleRelease(activeBooking.id, res.name)} className="w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition">
+                                  {isMine ? 'Release System' : 'Override Release'}
+                              </button> 
+                          : ( requestingResId === res.id ? (<div className="flex gap-2"><input autoFocus className="flex-1 bg-black text-white text-xs p-3 rounded-xl border border-zinc-700 outline-none focus:border-purple-500" placeholder="Reason..." value={requestMessage} onChange={e=>setRequestMessage(e.target.value)}/><button onClick={() => sendRequest(res, activeBooking)} className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-4 rounded-xl font-bold"><Send size={14}/></button></div>) : <button onClick={() => setRequestingResId(res.id)} className="w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 transition">Request Access</button>)
+                      ) : (
+                          <button onClick={() => initiateBooking(res)} disabled={!productionStatus} className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition shadow-lg ${!productionStatus ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-white text-black hover:bg-purple-50 shadow-white/10'}`}>Secure Asset</button>
+                      )
+                  )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* BOOKING MODAL */}
+      {bookingModal && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/90 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-md p-6 shadow-2xl relative">
+                  <button onClick={() => setBookingModal(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
+                  <h3 className="text-xl font-black text-white mb-1 uppercase">Confirm Reservation</h3>
+                  <p className="text-zinc-500 text-xs font-mono mb-6">{bookingModal.resource.name} // {bookingModal.dateStr}</p>
+                  
+                  <form onSubmit={confirmBooking} className="space-y-4">
+                      <div>
+                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Operation Type</label>
+                          <div className="grid grid-cols-3 gap-2">
+                              {['Learning', 'Paid Work', 'Office Production'].map(type => (
+                                  <button 
+                                      type="button" 
+                                      key={type}
+                                      onClick={() => setBookingPurpose(type)} 
+                                      className={`p-2 rounded-xl text-[10px] font-bold uppercase transition border ${bookingPurpose === type ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
+                                  >
+                                      {type === 'Learning' && <GraduationCap size={14} className="mx-auto mb-1"/>}
+                                      {type === 'Paid Work' && <WorkIcon size={14} className="mx-auto mb-1"/>}
+                                      {type === 'Office Production' && <Building2 size={14} className="mx-auto mb-1"/>}
+                                      {type}
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+                      
+                      <div>
+                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Intel / Description</label>
+                          <textarea 
+                              className="w-full bg-black border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-emerald-500 outline-none h-24 resize-none placeholder:text-zinc-700" 
+                              placeholder="Describe your task (e.g. Rendering Scene 04, Learning Blender nodes...)"
+                              value={bookingDesc}
+                              onChange={(e) => setBookingDesc(e.target.value)}
+                              required
+                          />
+                      </div>
+
+                      <button className="w-full bg-white text-black font-black py-4 rounded-xl uppercase tracking-widest hover:bg-emerald-400 transition">Confirm Booking</button>
+                  </form>
+              </div>
+          </div>
+      )}
+    </div>
+  );
+};
+
 // PROJECT TRACKER
 const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, setSuccessMessage, navigatedProject, resetNavigatedProject }) => {
   const [view, setView] = useState('list'); 
@@ -1063,304 +1361,6 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
   );
 };
 
-const TeamManager = ({ users, currentUser, logActivity, onShowProfile }) => {
-  const handleDelete = async (user) => { if(confirm(`Remove ${user.displayName}?`)) { await deleteDoc(doc(db, COLLECTION_USERS, user.uid)); logActivity(`Removed user: ${user.displayName}`); }};
-  return (
-    <div className="max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Users className="text-amber-500" /> CLAN ROSTER</h2><span className="text-xs text-zinc-500 bg-zinc-900 px-4 py-2 rounded-full border border-zinc-800 font-bold uppercase tracking-widest">Active: {users.length}</span></div><div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">{users.map(u => (<div key={u.uid} className="bg-zinc-900/50 p-6 rounded-3xl border border-zinc-800 hover:border-purple-500/30 transition group flex flex-col items-center text-center gap-4 relative"><div className="w-20 h-20 rounded-full bg-black border-2 border-zinc-700 overflow-hidden group-hover:scale-110 transition shadow-xl cursor-pointer" onClick={() => onShowProfile(u.uid)}><img src={u.avatar || `https://api.dicebear.com/9.x/avataaars/svg?seed=${u.uid}`} className="w-full h-full object-cover"/></div><div><p className="text-white font-black text-lg flex items-center justify-center gap-2 cursor-pointer hover:text-emerald-400 transition" onClick={() => onShowProfile(u.uid)}>{u.displayName || 'Unknown Agent'}{u.uid === currentUser.uid && <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded">YOU</span>}</p><p className="text-xs text-purple-400 font-mono mt-1 uppercase tracking-widest">{u.role || 'N/A'}</p><p className="text-xs text-zinc-600 mt-2">@{u.username || '---'}</p></div>{currentUser.role === 'admin' && u.uid !== currentUser.uid && (<button onClick={() => handleDelete(u)} className="mt-2 p-2 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition w-full flex justify-center"><Trash2 size={16} /></button>)}</div>))}</div></div>
-  );
-};
-
-// --- UPDATED BOOKING SYSTEM (ARMORY & LABS) ---
-const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, productionStatus }) => {
-  const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
-  const [requestingResId, setRequestingResId] = useState(null); 
-  const [requestMessage, setRequestMessage] = useState('');
-  
-  // New Booking Modal State
-  const [bookingModal, setBookingModal] = useState(null); // { resource, dateStr }
-  const [bookingPurpose, setBookingPurpose] = useState('Learning');
-  const [bookingDesc, setBookingDesc] = useState('');
-
-  const bookingsForDate = useMemo(() => bookings.filter(b => b.dateStr === selectedDate && b.status === 'active'), [bookings, selectedDate]);
-  
-  // Filter for requests sent TO Ray (admin only)
-  const adminRequests = useMemo(() => {
-      if (currentUser.role !== 'admin') return [];
-      return requests.filter(r => r.ownerId === 'RAY_ADMIN' && r.status === 'pending');
-  }, [requests, currentUser.role]);
-
-  // COOLDOWN LOGIC
-  const checkCooldown = (resourceId, userId, targetDateStr) => {
-      // Admins bypass cooldown
-      if (currentUser.role === 'admin' || currentUser.role === 'staff') return true;
-
-      const target = new Date(targetDateStr);
-      const oneDayBefore = new Date(target); oneDayBefore.setDate(target.getDate() - 1);
-      const twoDaysBefore = new Date(target); twoDaysBefore.setDate(target.getDate() - 2);
-
-      const str1 = formatDate(oneDayBefore);
-      const str2 = formatDate(twoDaysBefore);
-
-      const bookedYesterday = bookings.some(b => b.userId === userId && b.resourceId === resourceId && b.dateStr === str1 && b.status === 'active');
-      const bookedDayBefore = bookings.some(b => b.userId === userId && b.resourceId === resourceId && b.dateStr === str2 && b.status === 'active');
-
-      if (bookedYesterday && bookedDayBefore) {
-          return false; // Blocked
-      }
-      return true; // Allowed
-  };
-
-  const initiateBooking = (resource) => {
-      if (!productionStatus) return;
-      
-      const isAllowed = checkCooldown(resource.id, currentUser.uid, selectedDate);
-      if (!isAllowed) {
-          alert("COOLDOWN ACTIVE: You have booked this asset for 2 consecutive days. Take a 24h break or ask an Admin to override.");
-          return;
-      }
-
-      // Open Modal
-      setBookingModal({ resource, dateStr: selectedDate });
-      setBookingPurpose('Learning');
-      setBookingDesc('');
-  };
-
-  const confirmBooking = async (e) => {
-      e.preventDefault();
-      if (!bookingModal) return;
-
-      await addDoc(collection(db, COLLECTION_BOOKINGS), { 
-          resourceId: bookingModal.resource.id, 
-          resourceName: bookingModal.resource.name, 
-          userId: currentUser.uid, 
-          userName: currentUser.displayName, 
-          startTime: serverTimestamp(), 
-          status: 'active', 
-          dateStr: bookingModal.dateStr,
-          purpose: bookingPurpose,
-          description: bookingDesc
-      }); 
-      
-      logActivity(`Booked ${bookingModal.resource.name} for ${bookingPurpose}`);
-      setBookingModal(null);
-  };
-
-  const handleRelease = async (bookingId, resName) => {
-      await deleteDoc(doc(db, COLLECTION_BOOKINGS, bookingId)); 
-      logActivity(`Released ${resName}`); 
-  };
-
-  const sendRequest = async (resource, booking) => {
-    if(!requestMessage.trim()) return;
-    const ownerId = booking ? booking.userId : 'RAY_ADMIN'; // Default to Ray for empty edit bay
-    await addDoc(collection(db, COLLECTION_REQUESTS), { bookingId: booking ? booking.id : 'DIRECT_REQ', resourceId: resource.id, resourceName: resource.name, requesterId: currentUser.uid, requesterName: currentUser.displayName, requesterAvatar: currentUser.avatar, ownerId: ownerId, message: requestMessage, status: 'pending', timestamp: serverTimestamp() }); setRequestingResId(null); setRequestMessage(''); alert(`Request sent to ${resource.owner || 'Occupant'}!`);
-  };
-
-  const handleHandover = async (request, booking) => { 
-      await updateDoc(doc(db, COLLECTION_BOOKINGS, booking.id), { userId: request.requesterId, userName: request.requesterName }); 
-      await updateDoc(doc(db, COLLECTION_REQUESTS, request.id), { status: 'approved' }); 
-      logActivity(`Handed over ${booking.resourceName}`); 
-  };
-
-  // ADMIN ACTION: Grant access to Edit Bay
-  const grantAccess = async (req) => {
-      // 1. Create a booking for the requester
-      await addDoc(collection(db, COLLECTION_BOOKINGS), {
-          resourceId: req.resourceId,
-          resourceName: req.resourceName,
-          userId: req.requesterId,
-          userName: req.requesterName,
-          startTime: serverTimestamp(),
-          status: 'active',
-          dateStr: selectedDate, // Grants access for TODAY/Selected Date
-          purpose: 'Approved Request',
-          description: req.message
-      });
-      // 2. Mark request as approved
-      await updateDoc(doc(db, COLLECTION_REQUESTS, req.id), { status: 'approved' });
-      logActivity(`Ray granted access to ${req.requesterName}`);
-  };
-
-  return (
-    <div className="space-y-8 relative">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
-          <h2 className="text-3xl font-black text-white flex items-center gap-3"><Clock className="text-purple-500" /> ARMORY & LABS</h2>
-          <div className="flex items-center gap-3 bg-zinc-900 p-2 rounded-xl border border-zinc-800">
-              <span className="text-xs text-zinc-500 pl-2 font-bold uppercase">Target Date</span>
-              <input type="date" value={selectedDate} min={formatDate(new Date())} onChange={(e) => setSelectedDate(e.target.value)} className="bg-black text-white border border-zinc-700 rounded-lg px-4 py-2 text-sm outline-none focus:border-purple-500"/>
-          </div>
-      </div>
-      
-      {!productionStatus && (
-          <div className="bg-amber-900/20 border border-amber-500/30 p-6 rounded-2xl mb-8 flex items-center justify-center gap-4 animate-pulse">
-              <Factory size={32} className="text-amber-500" />
-              <div>
-                  <h3 className="text-amber-500 font-black text-lg uppercase tracking-widest">Production Halted</h3>
-                  <p className="text-amber-200/60 text-xs">Armory access is currently locked by Administration.</p>
-              </div>
-          </div>
-      )}
-
-      {/* ADMIN INBOX (RAY'S REQUESTS) */}
-      {currentUser.role === 'admin' && adminRequests.length > 0 && (
-          <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-500/30 p-6 rounded-2xl mb-8 animate-in slide-in-from-top-4">
-              <h3 className="text-blue-400 font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><Unlock size={16}/> Clearance Requests (Ray)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {adminRequests.map(req => (
-                      <div key={req.id} className="bg-black/60 p-4 rounded-xl border border-blue-500/20 flex flex-col gap-3">
-                          <div className="flex items-center gap-3">
-                              <img src={req.requesterAvatar} className="w-8 h-8 rounded-full bg-zinc-800" />
-                              <div>
-                                  <p className="text-white font-bold text-sm">{req.requesterName}</p>
-                                  <p className="text-zinc-400 text-xs italic">"{req.message}"</p>
-                              </div>
-                          </div>
-                          <div className="flex gap-2 mt-auto">
-                              <button onClick={() => grantAccess(req)} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg transition uppercase tracking-wider">Grant Access</button>
-                              <button onClick={() => deleteDoc(doc(db, COLLECTION_REQUESTS, req.id))} className="px-3 bg-zinc-800 hover:bg-red-900/50 text-zinc-400 hover:text-red-400 rounded-lg transition"><X size={14}/></button>
-                          </div>
-                      </div>
-                  ))}
-              </div>
-          </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {RESOURCES.map(res => {
-          const activeBooking = bookingsForDate.find(b => b.resourceId === res.id);
-          const isMine = activeBooking?.userId === currentUser.uid;
-          const bookedByUser = activeBooking ? users.find(u => u.uid === activeBooking.userId) : null;
-          const pendingRequests = activeBooking && isMine ? requests.filter(r => r.bookingId === activeBooking.id && r.status === 'pending') : [];
-          
-          return (
-            <div key={res.id} className={`relative p-6 rounded-3xl border-2 transition-all duration-300 group ${!productionStatus ? 'opacity-50 grayscale' : ''} ${activeBooking ? 'bg-zinc-900/50 border-red-900/30' : 'bg-zinc-900 border-zinc-800 hover:border-purple-500/50'}`}>
-              <div className="flex justify-between items-start mb-6">
-                  <div className={`p-4 rounded-2xl ${activeBooking ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-400'}`}><res.icon size={28} /></div>
-                  {activeBooking ? <span className="px-3 py-1 bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest rounded-full animate-pulse border border-red-500/20">LOCKED</span> : <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-full border border-emerald-500/20">READY</span>}
-              </div>
-              <h3 className="text-xl font-bold text-white mb-1">{res.name}</h3>
-              <p className="text-xs text-zinc-500 mb-6 font-mono uppercase">{res.desc}</p>
-              
-              {activeBooking && (
-                  <div className="mb-6">
-                      <div className="bg-black/40 rounded-xl p-3 border border-zinc-800 flex flex-col gap-2">
-                          <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700"><img src={bookedByUser?.avatar} className="w-full h-full object-cover"/></div>
-                              <div>
-                                  <p className="text-[10px] text-zinc-500 uppercase font-bold">Operator</p>
-                                  <p className="text-sm font-bold text-white truncate">{bookedByUser?.displayName}</p>
-                              </div>
-                          </div>
-                          {activeBooking.purpose && (
-                              <div className="mt-1 pt-2 border-t border-zinc-800/50">
-                                  <span className="text-[9px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded uppercase font-bold">{activeBooking.purpose}</span>
-                                  <p className="text-xs text-zinc-300 mt-1 italic line-clamp-2">"{activeBooking.description}"</p>
-                              </div>
-                          )}
-                      </div>
-                      {isMine && pendingRequests.map(req => (<div key={req.id} className="mt-3 bg-amber-900/10 p-3 rounded-xl border border-amber-500/20"><p className="text-xs text-amber-200 mb-2 font-mono">REQ: "{req.message}"</p><button onClick={() => handleHandover(req, activeBooking)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg transition">AUTHORIZE HANDOVER</button></div>))}
-                  </div>
-              )}
-
-              <div className="mt-auto">
-                  {res.restricted ? (
-                      // RESTRICTED EDIT BAY LOGIC
-                      requestingResId === res.id ? (
-                          <div className="flex gap-2">
-                              <input autoFocus className="flex-1 bg-black text-white text-xs p-3 rounded-xl border border-zinc-700 outline-none focus:border-purple-500" placeholder={`Message ${res.owner}...`} value={requestMessage} onChange={e=>setRequestMessage(e.target.value)} disabled={!productionStatus}/>
-                              <button onClick={() => sendRequest(res, activeBooking)} className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-4 rounded-xl font-bold" disabled={!productionStatus}><Send size={14}/></button>
-                          </div>
-                      ) : (
-                          <button onClick={() => setRequestingResId(res.id)} disabled={!productionStatus || activeBooking} className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition flex items-center justify-center gap-2 ${activeBooking ? 'bg-zinc-900 text-zinc-600 cursor-not-allowed' : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'}`}>
-                              <Lock size={14}/> {activeBooking ? 'Occupied' : `Request ${res.owner}`}
-                          </button>
-                      )
-                  ) : (
-                      // STANDARD ARMORY LOGIC
-                      activeBooking ? (
-                          // If mine, allow release. If Admin, allow forced release (clears cooldown for user essentially).
-                          (isMine || currentUser.role === 'admin') ? 
-                              <button onClick={() => handleRelease(activeBooking.id, res.name)} className="w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition">
-                                  {isMine ? 'Release System' : 'Override Release'}
-                              </button> 
-                          : ( requestingResId === res.id ? (<div className="flex gap-2"><input autoFocus className="flex-1 bg-black text-white text-xs p-3 rounded-xl border border-zinc-700 outline-none focus:border-purple-500" placeholder="Reason..." value={requestMessage} onChange={e=>setRequestMessage(e.target.value)}/><button onClick={() => sendRequest(res, activeBooking)} className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-4 rounded-xl font-bold"><Send size={14}/></button></div>) : <button onClick={() => setRequestingResId(res.id)} className="w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 transition">Request Access</button>)
-                      ) : (
-                          <button onClick={() => initiateBooking(res)} disabled={!productionStatus} className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition shadow-lg ${!productionStatus ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-white text-black hover:bg-purple-50 shadow-white/10'}`}>Secure Asset</button>
-                      )
-                  )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* BOOKING MODAL */}
-      {bookingModal && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/90 backdrop-blur-sm animate-in fade-in">
-              <div className="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-md p-6 shadow-2xl relative">
-                  <button onClick={() => setBookingModal(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
-                  <h3 className="text-xl font-black text-white mb-1 uppercase">Confirm Reservation</h3>
-                  <p className="text-zinc-500 text-xs font-mono mb-6">{bookingModal.resource.name} // {bookingModal.dateStr}</p>
-                  
-                  <form onSubmit={confirmBooking} className="space-y-4">
-                      <div>
-                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Operation Type</label>
-                          <div className="grid grid-cols-3 gap-2">
-                              {['Learning', 'Paid Work', 'Office Production'].map(type => (
-                                  <button 
-                                      type="button" 
-                                      key={type}
-                                      onClick={() => setBookingPurpose(type)} 
-                                      className={`p-2 rounded-xl text-[10px] font-bold uppercase transition border ${bookingPurpose === type ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
-                                  >
-                                      {type === 'Learning' && <GraduationCap size={14} className="mx-auto mb-1"/>}
-                                      {type === 'Paid Work' && <WorkIcon size={14} className="mx-auto mb-1"/>}
-                                      {type === 'Office Production' && <Building2 size={14} className="mx-auto mb-1"/>}
-                                      {type}
-                                  </button>
-                              ))}
-                          </div>
-                      </div>
-                      
-                      <div>
-                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Intel / Description</label>
-                          <textarea 
-                              className="w-full bg-black border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-emerald-500 outline-none h-24 resize-none placeholder:text-zinc-700" 
-                              placeholder="Describe your task (e.g. Rendering Scene 04, Learning Blender nodes...)"
-                              value={bookingDesc}
-                              onChange={(e) => setBookingDesc(e.target.value)}
-                              required
-                          />
-                      </div>
-
-                      <button className="w-full bg-white text-black font-black py-4 rounded-xl uppercase tracking-widest hover:bg-emerald-400 transition">Confirm Booking</button>
-                  </form>
-              </div>
-          </div>
-      )}
-    </div>
-  );
-};
-
-// NEXUS MENU
-const NexusMenu = ({ isOpen, toggle, setActiveTab, handleLogout, role, openChat, hasUnread }) => {
-  const menuRef = useRef(null);
-  useEffect(() => { const handleClickOutside = (event) => { if (isOpen && menuRef.current && !menuRef.current.contains(event.target)) { toggle(); } }; document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside); }, [isOpen, toggle]);
-  if (!isOpen) return null;
-  return (
-    <div ref={menuRef} className="fixed bottom-24 left-1/2 transform -translate-x-1/2 w-[90%] max-w-[250px] z-50 flex flex-col gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200 lg:bottom-10 lg:left-24 lg:transform-none">
-       <div className="bg-zinc-900/95 backdrop-blur-xl border border-zinc-700 rounded-2xl p-2 shadow-2xl flex flex-col gap-1">
-          {role !== 'temp' && (<button onClick={() => { openChat(); toggle(); }} className="flex items-center gap-3 text-emerald-400 hover:text-emerald-300 hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold relative"><MessageCircle size={18}/> Clan Comms{hasUnread && <span className="absolute right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}</button>)}
-          {role !== 'temp' && (<button onClick={() => { setActiveTab('team'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Users size={18}/> Clan Members</button>)}
-          <button onClick={() => { setActiveTab('profile'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Settings size={18}/> My Identity</button>
-          {role === 'admin' && <button onClick={() => { setActiveTab('cinema_admin'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Video size={18} className="text-amber-400"/> Cinema Control</button>}
-          <div className="h-px bg-zinc-800 my-1"></div>
-          <button onClick={handleLogout} className="flex items-center gap-3 text-red-400 hover:bg-red-900/20 px-4 py-3 rounded-xl transition text-sm font-bold"><LogOut size={18}/> Disconnect</button>
-       </div>
-    </div>
-  );
-};
-
 // --- MAIN APP ---
 const App = () => {
   const [currentUser, setCurrentUser] = useState(null); 
@@ -1479,7 +1479,7 @@ const App = () => {
            <span className="font-black text-white text-xl tracking-tighter">CLAN YUJO</span>
         </div>
         <nav className="flex-1 py-8 space-y-2 px-4">
-          {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Headquarters' },{ id: 'bookings', icon: Clock, label: 'Armory / Labs', restricted: true },{ id: 'projects', icon: Film, label: 'Missions' }].map(item => (
+          {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Headquarters' },{ id: 'bookings', icon: Clock, label: 'Armory / Labs', restricted: true },{ id: 'projects', icon: Film, label: 'Missions' }, { id: 'team', icon: Users, label: 'Clan Roster', restricted: true }].map(item => (
             (!item.restricted || currentUser.role !== 'temp') && (
             <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center p-4 rounded-2xl transition-all duration-300 group ${activeTab === item.id ? 'bg-white text-black shadow-lg shadow-white/10 scale-[1.02]' : 'text-zinc-500 hover:bg-zinc-900 hover:text-white'}`}><item.icon size={20} className={activeTab === item.id ? 'text-black' : 'group-hover:text-purple-400 transition'} /><span className="ml-4 font-bold text-sm tracking-wide">{item.label}</span></button>
             )
