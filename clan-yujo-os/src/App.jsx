@@ -9,7 +9,7 @@ import {
   Layers, Briefcase, MapPin, CalendarDays, CheckSquare, Flag, ArrowLeft, 
   AlertTriangle, MessageSquareCode, Minimize2, Command, Megaphone, HardDrive,
   Sticker, CornerDownRight, Loader2, Reply, Power, Cpu, BookOpen, Factory,
-  Unlock
+  Unlock, Hash, Edit2, UserPlus, FileText, Eye, EyeOff, ExternalLink, Briefcase as WorkIcon, GraduationCap, Building2
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -65,27 +65,11 @@ const DEFAULT_STICKERS = [
   { id: 's2', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=Fire&backgroundColor=transparent', name: 'Fire' },
 ];
 
-const PRE_PROD_ROLES = {
-  'Production': ['Producer', 'Line Producer', 'Production Manager', 'Coordinator', 'PA'],
-  'Creative': ['Director', 'Scriptwriter', 'Storyboard Artist'],
-  'Casting & Wardrobe': ['Casting Director', 'Costume Designer', 'Makeup Artist'],
-  'Logistics': ['Location Manager', 'Scout', 'Transport Captain']
-};
-
-const PROD_ROLES = {
-  'Direction': ['1st AD', '2nd AD', 'Script Supervisor'],
-  'Camera': ['DoP', 'Camera Op', '1st AC', '2nd AC', 'DIT', 'Steadicam Op'],
-  'Lighting': ['Gaffer', 'Best Boy Electric', 'Electrician'],
-  'Grip': ['Key Grip', 'Best Boy Grip', 'Dolly Grip'],
-  'Sound': ['Sound Mixer', 'Boom Op'],
-  'Art': ['Production Designer', 'Art Director', 'Set Dresser', 'Prop Master']
-};
-
-const POST_PROD_ROLES = {
-  'Editorial': ['Lead Editor', 'Assistant Editor', 'Colorist'],
-  'VFX & CGI': ['VFX Supervisor', 'Compositor', '3D Artist', 'Animator', 'Roto Artist'],
-  'Sound Post': ['Sound Designer', 'Foley Artist', 'Composer', 'Mixer'],
-  'Finish': ['Online Editor', 'QC Tech']
+const ROLE_TEMPLATES = {
+  'Production': ['Producer', 'Director', 'D.O.P', 'Camera Op', 'Sound Mixer', 'Gaffer', 'Art Director'],
+  'Pre-Production': ['Producer', 'Scriptwriter', 'Storyboard Artist', 'Casting Director', 'Location Manager'],
+  'Post-Production': ['Lead Editor', 'VFX Supervisor', 'Sound Designer', 'Colorist', 'Animator'],
+  'Custom': ['Lead']
 };
 
 const AVATAR_STYLES = [
@@ -104,6 +88,12 @@ const generatePassword = () => {
   let pass = "";
   for (let i = 0; i < 6; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
   return pass;
+};
+
+const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const compressImage = (file, quality = 0.7, maxWidth = 1080) => {
@@ -128,246 +118,6 @@ const compressImage = (file, quality = 0.7, maxWidth = 1080) => {
 
 // --- COMPONENTS ---
 
-// SWIPEABLE MESSAGE COMPONENT
-const SwipeableMessage = ({ msg, isMe, onTriggerOptions, activeReactionId, setActiveReactionId, toggleReaction, setReplyTo }) => {
-  const [touchStart, setTouchStart] = useState(null);
-  const [touchEnd, setTouchEnd] = useState(null);
-  const [translateX, setTranslateX] = useState(0);
-  
-  const minSwipeDistance = 50; 
-
-  const onTouchStart = (e) => {
-    setTouchEnd(null);
-    setTouchStart(e.targetTouches[0].clientX);
-  };
-
-  const onTouchMove = (e) => {
-    setTouchEnd(e.targetTouches[0].clientX);
-    if (touchStart) {
-        const currentX = e.targetTouches[0].clientX;
-        const diff = currentX - touchStart;
-        if (diff < 0 && diff > -100) { setTranslateX(diff); }
-    }
-  };
-
-  const onTouchEnd = () => {
-    if (!touchStart || !touchEnd) return;
-    const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > minSwipeDistance;
-    if (isLeftSwipe) { onTriggerOptions(msg.id); }
-    setTranslateX(0); setTouchStart(null); setTouchEnd(null);
-  };
-
-  const isSelected = activeReactionId === msg.id;
-
-  return (
-    <div className={`relative ${isMe ? 'flex flex-col items-end' : 'flex flex-col items-start'} overflow-x-clip`}>
-       <div 
-         className={`flex gap-3 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'} transition-transform duration-200`}
-         style={{ transform: `translateX(${translateX}px)` }}
-         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
-         onContextMenu={(e) => { e.preventDefault(); onTriggerOptions(msg.id); }}
-       >
-           {!isMe && <img src={msg.avatar} className="w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 object-cover flex-shrink-0 mt-auto"/>}
-           <div className="relative group">
-               {msg.replyTo && (
-                   <div className={`text-[10px] mb-1 px-2 flex items-center gap-1 opacity-60 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                       <CornerDownRight size={10}/> Replying to {msg.replyTo.name}
-                   </div>
-               )}
-               <div className={`p-3 rounded-2xl shadow-md relative transition-all duration-200 ${isSelected ? 'scale-95 ring-2 ring-emerald-500/50' : ''} ${isMe ? 'bg-white text-black rounded-tr-sm' : 'bg-zinc-800 text-zinc-200 rounded-tl-sm'}`}>
-                   {msg.replyTo && (
-                       <div className={`mb-2 p-1.5 rounded border-l-2 text-[10px] opacity-80 ${isMe ? 'bg-gray-100 border-gray-400 text-gray-600' : 'bg-black/20 border-emerald-500 text-zinc-400'}`}>
-                           <p className="font-bold truncate">{msg.replyTo.name}</p>
-                           <p className="truncate">{msg.replyTo.text}</p>
-                       </div>
-                   )}
-                   {!isMe && <p className={`text-[9px] font-bold mb-0.5 uppercase ${isMe ? 'text-black/50' : 'text-emerald-400'}`}>{msg.displayName}</p>}
-                   
-                   {msg.type === 'sticker' ? (
-                       <img src={msg.content} className="w-14 h-14 object-contain drop-shadow-sm" alt="Sticker" />
-                   ) : msg.image ? (
-                       <img src={msg.image} className="rounded-lg w-full h-auto border border-black/10" />
-                   ) : (
-                       <p className="text-sm leading-snug whitespace-pre-wrap">{msg.text}</p>
-                   )}
-               </div>
-               {msg.reactions && Object.keys(msg.reactions).some(k => msg.reactions[k].length > 0) && (
-                   <div className={`absolute -bottom-2.5 ${isMe ? 'right-1' : 'left-1'} flex gap-0.5 z-10`}>
-                       {Object.entries(msg.reactions).map(([emoji, users]) => (
-                           users.length > 0 && (
-                               <span key={emoji} className="bg-zinc-900 border border-zinc-700 text-[9px] px-1 py-0.5 rounded-full text-white shadow-sm flex items-center gap-0.5 animate-in zoom-in">
-                                   {emoji} {users.length > 1 && <span className="opacity-60">{users.length}</span>}
-                               </span>
-                           )
-                       ))}
-                   </div>
-               )}
-           </div>
-       </div>
-       {isSelected && (
-           <>
-           <div className="fixed inset-0 z-40" onClick={() => setActiveReactionId(null)}></div>
-           <div className={`absolute z-50 ${isMe ? 'right-0' : 'left-12'} -top-10 bg-zinc-800 p-1 rounded-full shadow-xl flex gap-1 border border-zinc-600 animate-in fade-in slide-in-from-bottom-2`}>
-               {REACTION_EMOJIS.map(emoji => (
-                   <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)} className="hover:bg-zinc-700 p-1.5 rounded-full transition hover:scale-125 active:scale-95 text-base leading-none">
-                       {emoji}
-                   </button>
-               ))}
-               <div className="w-px bg-zinc-600 mx-1"></div>
-               <button onClick={() => { setReplyTo(msg); setActiveReactionId(null); }} className="hover:bg-zinc-700 p-1.5 rounded-full text-zinc-300"><Reply size={14}/></button>
-           </div>
-           </>
-       )}
-    </div>
-  );
-};
-
-// GLOBAL CHAT (CONTAINER)
-const GlobalChat = ({ currentUser, onClose }) => {
-  const [msgText, setMsgText] = useState('');
-  const [messages, setMessages] = useState([]);
-  const [savedStickers, setSavedStickers] = useState([]);
-  const [isSending, setIsSending] = useState(false);
-  const [activeReactionId, setActiveReactionId] = useState(null); 
-  const [replyTo, setReplyTo] = useState(null);
-  const [showStickerHub, setShowStickerHub] = useState(false);
-  
-  const scrollRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const stickerInputRef = useRef(null);
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) { onClose(); }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [onClose]);
-
-  useEffect(() => {
-    const q = query(collection(db, COLLECTION_MESSAGES), limit(50));
-    const unsub = onSnapshot(q, (snap) => {
-      const rawMsgs = snap.docs.map(d => ({id: d.id, ...d.data()}));
-      const sorted = rawMsgs.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-      setMessages(sorted);
-      setTimeout(() => { if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, 100);
-    });
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-      const q = query(collection(db, COLLECTION_STICKERS), orderBy('createdAt', 'desc'), limit(20));
-      const unsub = onSnapshot(q, (snap) => {
-          const stickers = snap.docs.map(d => ({id: d.id, ...d.data()}));
-          setSavedStickers(stickers.length > 0 ? stickers : DEFAULT_STICKERS);
-      });
-      return () => unsub();
-  }, []);
-
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onloadend = () => sendToDb({ image: reader.result }); 
-        reader.readAsDataURL(file);
-    }
-  };
-
-  const handleStickerUpload = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      setIsSending(true);
-      try {
-        const compressedSticker = await compressImage(file, 0.7, 150);
-        await addDoc(collection(db, COLLECTION_STICKERS), { url: compressedSticker, addedBy: currentUser.displayName, createdAt: serverTimestamp() });
-      } catch(err) { console.error(err); }
-      finally { setIsSending(false); }
-  };
-
-  const sendToDb = async (data) => {
-      setIsSending(true);
-      try {
-        await addDoc(collection(db, COLLECTION_MESSAGES), {
-            ...data, uid: currentUser.uid, displayName: currentUser.displayName, avatar: currentUser.avatar, reactions: {}, 
-            replyTo: replyTo ? { id: replyTo.id, name: replyTo.displayName, text: replyTo.text || "Media" } : null,
-            createdAt: serverTimestamp()
-        });
-        setMsgText(''); setReplyTo(null); setActiveReactionId(null); setShowStickerHub(false);
-      } catch(err) { console.error(err); }
-      finally { setIsSending(false); }
-  };
-
-  const toggleReaction = async (msgId, emoji) => {
-      const msgRef = doc(db, COLLECTION_MESSAGES, msgId);
-      const msg = messages.find(m => m.id === msgId);
-      if (!msg) return;
-      const currentReactions = msg.reactions || {};
-      const userList = currentReactions[emoji] || [];
-      const newUserList = userList.includes(currentUser.uid) ? userList.filter(id => id !== currentUser.uid) : [...userList, currentUser.uid];
-      await updateDoc(msgRef, { [`reactions.${emoji}`]: newUserList });
-      setActiveReactionId(null);
-  };
-
-  return (
-    <div ref={containerRef} className="fixed bottom-24 right-4 md:right-8 z-[60] w-[calc(100vw-2rem)] md:w-96 md:max-w-sm h-[500px] flex flex-col animate-in slide-in-from-bottom-10 zoom-in-95 duration-300 shadow-2xl shadow-black/80 rounded-3xl border border-zinc-700 overflow-hidden bg-zinc-950/95 backdrop-blur-xl max-h-[75vh]">
-      <div className="bg-zinc-950 border-b border-zinc-800 p-3 flex justify-between items-center">
-           <div className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div><h3 className="text-white font-bold flex items-center gap-2 text-xs tracking-wider"><MessageSquareCode size={14} className="text-emerald-500"/> CLAN COMMS</h3></div>
-           <button onClick={onClose} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white"><Minimize2 size={16}/></button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-4 bg-black/20" ref={scrollRef}>
-           {messages.length === 0 && <div className="text-center text-zinc-600 text-[10px] mt-10 uppercase tracking-widest">Frequency Open...</div>}
-           {messages.map(msg => (<SwipeableMessage key={msg.id} msg={msg} isMe={msg.uid === currentUser.uid} activeReactionId={activeReactionId} onTriggerOptions={(id) => setActiveReactionId(id)} toggleReaction={toggleReaction} setReplyTo={setReplyTo} setActiveReactionId={setActiveReactionId}/>))}
-           {isSending && <div className="flex justify-center"><Loader2 size={12} className="text-zinc-600 animate-spin"/></div>}
-      </div>
-      {showStickerHub && (
-          <div className="bg-zinc-900 border-t border-zinc-800 p-3 h-40 flex flex-col animate-in slide-in-from-bottom-10">
-              <div className="flex justify-between items-center mb-2 px-1">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Vault</span>
-                  <button onClick={() => stickerInputRef.current.click()} className="text-[10px] flex items-center gap-1 text-emerald-500 hover:text-white transition font-bold bg-emerald-500/10 px-2 py-0.5 rounded"><Plus size={10}/> UPLOAD</button>
-                  <input type="file" ref={stickerInputRef} className="hidden" accept="image/*" onChange={handleStickerUpload}/>
-              </div>
-              <div className="grid grid-cols-5 gap-2 overflow-y-auto custom-scrollbar">
-                  {savedStickers.map(s => (<button key={s.id} onClick={() => sendToDb({ type: 'sticker', content: s.url })} className="hover:bg-zinc-800 p-1 rounded-lg transition flex items-center justify-center aspect-square"><img src={s.url} className="w-full h-full object-contain" /></button>))}
-              </div>
-          </div>
-      )}
-      <div className="bg-zinc-900 border-t border-zinc-800 pb-safe">
-           {replyTo && (<div className="bg-zinc-800/50 px-3 py-1.5 flex justify-between items-center border-b border-zinc-700/50 animate-in slide-in-from-bottom-2"><div className="border-l-2 border-emerald-500 pl-2"><p className="text-emerald-500 text-[10px] font-bold">Reply to {replyTo.displayName}</p><p className="text-zinc-400 text-[10px] truncate max-w-[200px]">{replyTo.text || 'Media'}</p></div><button onClick={() => setReplyTo(null)}><X size={14} className="text-zinc-500 hover:text-white"/></button></div>)}
-           <form onSubmit={(e) => { e.preventDefault(); sendToDb({ text: msgText }); }} className="p-2 flex gap-2 items-end">
-               <button type="button" onClick={() => fileInputRef.current.click()} className="text-zinc-400 hover:text-white p-2 bg-zinc-800 rounded-xl transition active:scale-95"><ImageIcon size={18}/></button>
-               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload}/>
-               <div className="flex-1 bg-zinc-950 border border-zinc-700 rounded-2xl px-3 py-2 flex items-center focus-within:border-emerald-500 transition">
-                   <input autoFocus className="bg-transparent text-white text-sm w-full outline-none placeholder:text-zinc-600" placeholder="Data entry..." value={msgText} onChange={e => setMsgText(e.target.value)}/>
-                   <button type="button" onClick={() => setShowStickerHub(!showStickerHub)} className={`ml-1 transition ${showStickerHub ? 'text-emerald-500' : 'text-zinc-500 hover:text-white'}`}><Sticker size={18}/></button>
-               </div>
-               <button disabled={isSending} className={`p-2 rounded-xl transition shadow-lg ${msgText.trim() || isSending ? 'bg-emerald-600 text-white hover:scale-105 active:scale-95' : 'bg-zinc-800 text-zinc-500'}`}><Send size={18} /></button>
-           </form>
-      </div>
-    </div>
-  );
-};
-
-// ANNOUNCEMENTS WIDGET
-const AnnouncementsWidget = ({ announcements, isAdmin, logActivity }) => {
-    const [text, setText] = useState('');
-    const postAnnouncement = async (e) => { e.preventDefault(); if(!text) return; await addDoc(collection(db, COLLECTION_ANNOUNCEMENTS), { text, createdAt: serverTimestamp(), active: true }); logActivity('Posted announcement'); setText(''); };
-    const deleteAnnounce = async (id) => { await deleteDoc(doc(db, COLLECTION_ANNOUNCEMENTS, id)); };
-    const latest = announcements && announcements.length > 0 ? announcements[0] : null;
-    return (
-        <div className="bg-gradient-to-r from-indigo-900/50 to-purple-900/50 border border-indigo-500/30 p-6 rounded-3xl mb-8 relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10"><Megaphone size={100} className="text-white"/></div>
-            <div className="relative z-10">
-                <h3 className="text-indigo-300 font-black uppercase tracking-widest text-xs mb-2 flex items-center gap-2"><Megaphone size={14}/> HQ Broadcast</h3>
-                {latest ? (<div className="flex justify-between items-start"><p className="text-white text-lg md:text-2xl font-bold leading-tight max-w-2xl">"{latest.text}"</p>{isAdmin && <button onClick={() => deleteAnnounce(latest.id)} className="text-zinc-500 hover:text-red-400"><Trash2 size={16}/></button>}</div>) : <p className="text-zinc-500 italic">No active broadcasts.</p>}
-                {isAdmin && (<form onSubmit={postAnnouncement} className="mt-6 flex gap-2"><input className="flex-1 bg-black/30 border border-indigo-500/30 rounded-xl px-4 py-2 text-sm text-white placeholder:text-indigo-300/50 focus:border-indigo-400 outline-none" placeholder="New Announcement..." value={text} onChange={e => setText(e.target.value)} /><button className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase">Post</button></form>)}
-            </div>
-        </div>
-    );
-};
-
-// LOGIN SCREEN
 const LoginScreen = ({ onLogin, isAuthReady }) => {
   const [mode, setMode] = useState('login'); 
   const [loginCreds, setLoginCreds] = useState({ username: '', password: '' });
@@ -476,7 +226,322 @@ const LoginScreen = ({ onLogin, isAuthReady }) => {
   );
 };
 
-// MOVIE & POLL COMPONENTS (Standard)
+// AGENT DOSSIER
+const AgentDossier = ({ userId, users, onClose }) => {
+    const user = users.find(u => u.uid === userId);
+    if (!user) return null;
+
+    return (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative">
+                <button onClick={onClose} className="absolute top-4 right-4 text-zinc-400 hover:text-white bg-black/50 p-2 rounded-full z-10"><X size={18}/></button>
+                <div className="h-32 bg-gradient-to-r from-emerald-900/50 to-purple-900/50 relative">
+                    <div className="absolute -bottom-12 left-6 border-4 border-zinc-900 rounded-2xl overflow-hidden bg-black w-24 h-24 shadow-lg">
+                        <img src={user.avatar} className="w-full h-full object-cover" />
+                    </div>
+                </div>
+                <div className="pt-14 px-6 pb-8">
+                    <div className="mb-4">
+                        <h3 className="text-2xl font-black text-white leading-none">{user.displayName}</h3>
+                        <p className="text-emerald-500 font-mono text-xs mt-1 flex items-center gap-1">
+                            <Hash size={12}/> {user.username} (ORIGINAL ID)
+                        </p>
+                    </div>
+                    <div className="space-y-3">
+                        <div className="bg-black/30 p-3 rounded-xl border border-zinc-800">
+                            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest block mb-1">Clearance</span>
+                            <span className="text-white text-sm font-bold capitalize">{user.role}</span>
+                        </div>
+                        <div className="bg-black/30 p-3 rounded-xl border border-zinc-800">
+                            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest block mb-1">Status Report</span>
+                            <p className="text-zinc-300 text-sm leading-relaxed italic">"{user.bio || 'No status reported.'}"</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const SwipeableMessage = ({ msg, isMe, onTriggerOptions, activeReactionId, setActiveReactionId, toggleReaction, setReplyTo, users, onShowProfile }) => {
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
+  const [translateX, setTranslateX] = useState(0);
+  
+  const senderUser = users.find(u => u.uid === msg.uid);
+  const displayUsername = senderUser ? senderUser.username : 'Unknown';
+  const displayAvatar = senderUser ? senderUser.avatar : msg.avatar;
+  const displayName = senderUser ? senderUser.displayName : msg.displayName;
+
+  const minSwipeDistance = 50; 
+
+  const onTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+    if (touchStart) {
+        const currentX = e.targetTouches[0].clientX;
+        const diff = currentX - touchStart;
+        if (diff < 0 && diff > -100) { setTranslateX(diff); }
+    }
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    if (isLeftSwipe) { onTriggerOptions(msg.id); }
+    setTranslateX(0); setTouchStart(null); setTouchEnd(null);
+  };
+
+  const isSelected = activeReactionId === msg.id;
+
+  return (
+    <div className={`relative ${isMe ? 'flex flex-col items-end' : 'flex flex-col items-start'} overflow-x-clip`}>
+       <div 
+         className={`flex gap-3 max-w-[95%] md:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} transition-transform duration-200`}
+         style={{ transform: `translateX(${translateX}px)` }}
+         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+         onContextMenu={(e) => { e.preventDefault(); onTriggerOptions(msg.id); }}
+       >
+           {!isMe && (
+               <img 
+                src={displayAvatar} 
+                onClick={() => onShowProfile(msg.uid)}
+                className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 object-cover flex-shrink-0 mt-auto cursor-pointer hover:border-emerald-500 transition"
+               />
+           )}
+           <div className="relative group">
+               {msg.replyTo && (
+                   <div className={`text-[10px] mb-1 px-2 flex items-center gap-1 opacity-60 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                       <CornerDownRight size={10}/> Replying to {msg.replyTo.name}
+                   </div>
+               )}
+               <div className={`p-3.5 rounded-2xl shadow-md relative transition-all duration-200 ${isSelected ? 'scale-95 ring-2 ring-emerald-500/50' : ''} ${isMe ? 'bg-white text-black rounded-tr-sm' : 'bg-zinc-800 text-zinc-200 rounded-tl-sm'}`}>
+                   {msg.replyTo && (
+                       <div className={`mb-2 p-1.5 rounded border-l-2 text-[10px] opacity-80 ${isMe ? 'bg-gray-100 border-gray-400 text-gray-600' : 'bg-black/20 border-emerald-500 text-zinc-400'}`}>
+                           <p className="font-bold truncate">{msg.replyTo.name}</p>
+                           <p className="truncate">{msg.replyTo.text}</p>
+                       </div>
+                   )}
+                   {!isMe && (
+                       <div className="flex items-baseline gap-2 mb-1 cursor-pointer" onClick={() => onShowProfile(msg.uid)}>
+                           <p className="text-[10px] font-black uppercase text-emerald-400 border-b border-emerald-500/30 hover:border-emerald-400 transition pb-0.5">
+                               {displayName}
+                           </p>
+                           <span className="text-[9px] text-zinc-500 font-mono">@{displayUsername}</span>
+                       </div>
+                   )}
+                   
+                   {msg.type === 'sticker' ? (
+                       <img src={msg.content} className="w-20 h-20 object-contain drop-shadow-sm" alt="Sticker" />
+                   ) : msg.image ? (
+                       <img src={msg.image} className="rounded-lg w-full h-auto border border-black/10" />
+                   ) : (
+                       <p className="text-sm leading-snug whitespace-pre-wrap">{msg.text}</p>
+                   )}
+                   <p className={`text-[9px] mt-1 text-right ${isMe ? 'text-gray-400' : 'text-zinc-500'}`}>{formatTime(msg.createdAt)}</p>
+               </div>
+               {msg.reactions && Object.keys(msg.reactions).some(k => msg.reactions[k].length > 0) && (
+                   <div className={`absolute -bottom-2.5 ${isMe ? 'right-1' : 'left-1'} flex gap-0.5 z-10`}>
+                       {Object.entries(msg.reactions).map(([emoji, users]) => (
+                           users.length > 0 && (
+                               <span key={emoji} className="bg-zinc-900 border border-zinc-700 text-[9px] px-1 py-0.5 rounded-full text-white shadow-sm flex items-center gap-0.5 animate-in zoom-in">
+                                   {emoji} {users.length > 1 && <span className="opacity-60">{users.length}</span>}
+                               </span>
+                           )
+                       ))}
+                   </div>
+               )}
+           </div>
+       </div>
+       {isSelected && (
+           <>
+           <div className="fixed inset-0 z-40" onClick={() => setActiveReactionId(null)}></div>
+           <div className={`absolute z-50 ${isMe ? 'right-0' : 'left-12'} -top-10 bg-zinc-800 p-1 rounded-full shadow-xl flex gap-1 border border-zinc-600 animate-in fade-in slide-in-from-bottom-2`}>
+               {REACTION_EMOJIS.map(emoji => (
+                   <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)} className="hover:bg-zinc-700 p-1.5 rounded-full transition hover:scale-125 active:scale-95 text-base leading-none">
+                       {emoji}
+                   </button>
+               ))}
+               <div className="w-px bg-zinc-600 mx-1"></div>
+               <button onClick={() => { setReplyTo(msg); setActiveReactionId(null); }} className="hover:bg-zinc-700 p-1.5 rounded-full text-zinc-300"><Reply size={14}/></button>
+           </div>
+           </>
+       )}
+    </div>
+  );
+};
+
+const GlobalChat = ({ currentUser, users, onClose }) => {
+  const [msgText, setMsgText] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [savedStickers, setSavedStickers] = useState([]);
+  const [isSending, setIsSending] = useState(false);
+  const [activeReactionId, setActiveReactionId] = useState(null); 
+  const [replyTo, setReplyTo] = useState(null);
+  const [showStickerHub, setShowStickerHub] = useState(false);
+  const [viewingProfileId, setViewingProfileId] = useState(null);
+  
+  const scrollRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const stickerInputRef = useRef(null);
+
+  useEffect(() => {
+    const q = query(collection(db, COLLECTION_MESSAGES), limit(50));
+    const unsub = onSnapshot(q, (snap) => {
+      const rawMsgs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+      const sorted = rawMsgs.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+      setMessages(sorted);
+      setTimeout(() => { if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, 100);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+      const q = query(collection(db, COLLECTION_STICKERS), orderBy('createdAt', 'desc'), limit(20));
+      const unsub = onSnapshot(q, (snap) => {
+          const stickers = snap.docs.map(d => ({id: d.id, ...d.data()}));
+          setSavedStickers(stickers.length > 0 ? stickers : DEFAULT_STICKERS);
+      });
+      return () => unsub();
+  }, []);
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onloadend = () => sendToDb({ image: reader.result }); 
+        reader.readAsDataURL(file);
+    }
+  };
+
+  const handleStickerUpload = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      setIsSending(true);
+      try {
+        const compressedSticker = await compressImage(file, 0.7, 150);
+        await addDoc(collection(db, COLLECTION_STICKERS), { url: compressedSticker, addedBy: currentUser.displayName, createdAt: serverTimestamp() });
+      } catch(err) { console.error(err); }
+      finally { setIsSending(false); }
+  };
+
+  const sendToDb = async (data) => {
+      setIsSending(true);
+      try {
+        await addDoc(collection(db, COLLECTION_MESSAGES), {
+            ...data, 
+            uid: currentUser.uid, 
+            displayName: currentUser.displayName, 
+            avatar: currentUser.avatar, 
+            reactions: {}, 
+            replyTo: replyTo ? { id: replyTo.id, name: replyTo.displayName, text: replyTo.text || "Media" } : null,
+            createdAt: serverTimestamp()
+        });
+        setMsgText(''); setReplyTo(null); setActiveReactionId(null); setShowStickerHub(false);
+      } catch(err) { console.error(err); }
+      finally { setIsSending(false); }
+  };
+
+  const toggleReaction = async (msgId, emoji) => {
+      const msgRef = doc(db, COLLECTION_MESSAGES, msgId);
+      const msg = messages.find(m => m.id === msgId);
+      if (!msg) return;
+      const currentReactions = msg.reactions || {};
+      const userList = currentReactions[emoji] || [];
+      const newUserList = userList.includes(currentUser.uid) ? userList.filter(id => id !== currentUser.uid) : [...userList, currentUser.uid];
+      await updateDoc(msgRef, { [`reactions.${emoji}`]: newUserList });
+      setActiveReactionId(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-zinc-950/95 backdrop-blur-xl flex flex-col animate-in slide-in-from-bottom-10 duration-300">
+      <div className="bg-zinc-950 border-b border-zinc-800 p-4 flex justify-between items-center safe-top">
+           <div className="flex items-center gap-3">
+               <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50"></div>
+               <div>
+                   <h3 className="text-white font-black text-lg tracking-widest flex items-center gap-2">
+                       <MessageSquareCode size={20} className="text-emerald-500"/> CLAN COMMS
+                   </h3>
+                   <p className="text-[10px] text-zinc-500 font-mono uppercase">Secure Channel // {users.length} Agents Online</p>
+               </div>
+           </div>
+           <button onClick={onClose} className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition bg-zinc-900 border border-zinc-800"><Minimize2 size={20}/></button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed" ref={scrollRef}>
+           {messages.length === 0 && <div className="flex flex-col items-center justify-center h-full text-zinc-600 space-y-4"><Wifi size={48} className="animate-pulse"/><p className="text-xs uppercase tracking-widest">Frequency Open...</p></div>}
+           {messages.map(msg => (
+               <SwipeableMessage 
+                key={msg.id} 
+                msg={msg} 
+                isMe={msg.uid === currentUser.uid} 
+                activeReactionId={activeReactionId} 
+                onTriggerOptions={(id) => setActiveReactionId(id)} 
+                toggleReaction={toggleReaction} 
+                setReplyTo={setReplyTo} 
+                setActiveReactionId={setActiveReactionId}
+                users={users}
+                onShowProfile={(uid) => setViewingProfileId(uid)}
+               />
+           ))}
+           {isSending && <div className="flex justify-center"><Loader2 size={16} className="text-emerald-500 animate-spin"/></div>}
+      </div>
+
+      {showStickerHub && (
+          <div className="bg-zinc-900 border-t border-zinc-800 p-4 h-48 flex flex-col animate-in slide-in-from-bottom-10">
+              <div className="flex justify-between items-center mb-3 px-1">
+                  <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Sticker Vault</span>
+                  <button onClick={() => stickerInputRef.current.click()} className="text-[10px] flex items-center gap-1 text-emerald-500 hover:text-white transition font-bold bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20"><Plus size={12}/> UPLOAD NEW</button>
+                  <input type="file" ref={stickerInputRef} className="hidden" accept="image/*" onChange={handleStickerUpload}/>
+              </div>
+              <div className="grid grid-cols-5 md:grid-cols-8 gap-3 overflow-y-auto custom-scrollbar">
+                  {savedStickers.map(s => (<button key={s.id} onClick={() => sendToDb({ type: 'sticker', content: s.url })} className="hover:bg-zinc-800 p-2 rounded-xl transition flex items-center justify-center aspect-square border border-transparent hover:border-zinc-700 bg-zinc-950"><img src={s.url} className="w-full h-full object-contain" /></button>))}
+              </div>
+          </div>
+      )}
+
+      <div className="bg-zinc-900 border-t border-zinc-800 pb-safe p-2 md:p-4">
+           {replyTo && (<div className="bg-zinc-800/80 px-4 py-2 flex justify-between items-center border-b border-zinc-700/50 animate-in slide-in-from-bottom-2 mb-2 rounded-t-xl mx-2"><div className="border-l-2 border-emerald-500 pl-3"><p className="text-emerald-500 text-xs font-bold">Reply to {replyTo.displayName}</p><p className="text-zinc-400 text-xs truncate max-w-[200px]">{replyTo.text || 'Media'}</p></div><button onClick={() => setReplyTo(null)}><X size={16} className="text-zinc-500 hover:text-white"/></button></div>)}
+           <form onSubmit={(e) => { e.preventDefault(); sendToDb({ text: msgText }); }} className="flex gap-2 items-end max-w-4xl mx-auto w-full">
+               <button type="button" onClick={() => fileInputRef.current.click()} className="text-zinc-400 hover:text-white p-3 bg-zinc-800 rounded-2xl transition active:scale-95 border border-zinc-700 hover:border-zinc-500"><ImageIcon size={20}/></button>
+               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload}/>
+               <div className="flex-1 bg-black border border-zinc-700 rounded-2xl px-4 py-3 flex items-center focus-within:border-emerald-500 transition shadow-inner">
+                   <input autoFocus className="bg-transparent text-white text-sm w-full outline-none placeholder:text-zinc-600" placeholder="Type a message..." value={msgText} onChange={e => setMsgText(e.target.value)}/>
+                   <button type="button" onClick={() => setShowStickerHub(!showStickerHub)} className={`ml-2 transition ${showStickerHub ? 'text-emerald-500' : 'text-zinc-500 hover:text-white'}`}><Sticker size={20}/></button>
+               </div>
+               <button disabled={isSending} className={`p-3 rounded-2xl transition shadow-lg ${msgText.trim() || isSending ? 'bg-emerald-600 text-white hover:scale-105 active:scale-95' : 'bg-zinc-800 text-zinc-500 border border-zinc-700'}`}><Send size={20} /></button>
+           </form>
+      </div>
+
+      {viewingProfileId && <AgentDossier userId={viewingProfileId} users={users} onClose={() => setViewingProfileId(null)} />}
+    </div>
+  );
+};
+
+// ANNOUNCEMENTS WIDGET
+const AnnouncementsWidget = ({ announcements, isAdmin, logActivity }) => {
+    const [text, setText] = useState('');
+    const postAnnouncement = async (e) => { e.preventDefault(); if(!text) return; await addDoc(collection(db, COLLECTION_ANNOUNCEMENTS), { text, createdAt: serverTimestamp(), active: true }); logActivity('Posted announcement'); setText(''); };
+    const deleteAnnounce = async (id) => { await deleteDoc(doc(db, COLLECTION_ANNOUNCEMENTS, id)); };
+    const latest = announcements && announcements.length > 0 ? announcements[0] : null;
+    return (
+        <div className="bg-gradient-to-r from-indigo-900/50 to-purple-900/50 border border-indigo-500/30 p-6 rounded-3xl mb-8 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10"><Megaphone size={100} className="text-white"/></div>
+            <div className="relative z-10">
+                <h3 className="text-indigo-300 font-black uppercase tracking-widest text-xs mb-2 flex items-center gap-2"><Megaphone size={14}/> HQ Broadcast</h3>
+                {latest ? (<div className="flex justify-between items-start"><p className="text-white text-lg md:text-2xl font-bold leading-tight max-w-2xl">"{latest.text}"</p>{isAdmin && <button onClick={() => deleteAnnounce(latest.id)} className="text-zinc-500 hover:text-red-400"><Trash2 size={16}/></button>}</div>) : <p className="text-zinc-500 italic">No active broadcasts.</p>}
+                {isAdmin && (<form onSubmit={postAnnouncement} className="mt-6 flex gap-2"><input className="flex-1 bg-black/30 border border-indigo-500/30 rounded-xl px-4 py-2 text-sm text-white placeholder:text-indigo-300/50 focus:border-indigo-400 outline-none" placeholder="New Announcement..." value={text} onChange={e => setText(e.target.value)} /><button className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase">Post</button></form>)}
+            </div>
+        </div>
+    );
+};
+
+// MOVIE & POLL COMPONENTS
 const MovieNightAdmin = ({ logActivity }) => {
   const [movie, setMovie] = useState({ title: '', date: '', time: '', desc: '', image: '' });
   const [pollQ, setPollQ] = useState('');
@@ -575,17 +640,90 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
   const [selectedProject, setSelectedProject] = useState(null);
   const [newProj, setNewProj] = useState({ title: '', type: 'Production', startDate: '', endDate: '', callTime: '', callLocation: '', assignments: {} });
   
-  const getRolesForType = (type) => { 
-      if (type === 'Pre-Production') return PRE_PROD_ROLES; 
-      if (type === 'Production') return PROD_ROLES; 
-      if (type === 'Post-Production') return POST_PROD_ROLES; 
-      return PROD_ROLES; 
-  };
+  // State for form
+  const [projForm, setProjForm] = useState({
+      title: '', 
+      type: 'Production', 
+      startDate: '', 
+      endDate: '', 
+      callTime: '', 
+      callLocation: '', 
+      crew: [] 
+  });
+
+  const [crewList, setCrewList] = useState([]); 
+  const [editingRoleIndex, setEditingRoleIndex] = useState(null); 
   
-  const currentRoles = getRolesForType(newProj.type);
+  // Call sheet upload
+  const callSheetInputRef = useRef(null);
+  const [callSheetLink, setCallSheetLink] = useState('');
+
+  useEffect(() => {
+      if (view === 'create') {
+          const templates = ROLE_TEMPLATES[projForm.type] || ROLE_TEMPLATES['Custom'];
+          const initialCrew = templates.map((roleName, idx) => ({
+              id: Date.now() + idx,
+              roleName: roleName,
+              userId: ''
+          }));
+          setCrewList(initialCrew);
+      }
+  }, [projForm.type, view]);
+
+  useEffect(() => {
+      if (view === 'edit' && selectedProject) {
+          setProjForm({
+              title: selectedProject.title,
+              type: selectedProject.type,
+              startDate: selectedProject.startDate,
+              endDate: selectedProject.endDate,
+              callTime: selectedProject.callTime,
+              callLocation: selectedProject.callLocation,
+              crew: selectedProject.crew || []
+          });
+          if (selectedProject.assignments && (!selectedProject.crew || selectedProject.crew.length === 0)) {
+              const convertedCrew = Object.entries(selectedProject.assignments).map(([role, uid], idx) => ({
+                  id: Date.now() + idx, roleName: role, userId: uid
+              }));
+              setCrewList(convertedCrew);
+          } else {
+              setCrewList(selectedProject.crew || []);
+          }
+      }
+  }, [view, selectedProject]);
+
   const calculateProgress = (start, end) => { if (!start || !end) return 0; const now = new Date().getTime(); const s = new Date(start).getTime(); const e = new Date(end).getTime(); if (now < s) return 0; if (now > e) return 100; return Math.round(((now - s) / (e - s)) * 100); };
-  const handleCreate = async (e) => { e.preventDefault(); await addDoc(collection(db, COLLECTION_PROJECTS), { ...newProj, progress: 0, status: 'Active', setbacks: [], dataLogs: [], createdAt: serverTimestamp() }); logActivity(`Initiated Operation: ${newProj.title}`); setView('list'); setNewProj({ title: '', type: 'Production', startDate: '', endDate: '', callTime: '', callLocation: '', assignments: {} }); };
-  const handleAddSetback = async (text, project) => { const newSetback = { id: Date.now(), text, date: new Date().toISOString(), status: 'Active' }; const updatedSetbacks = [...(project.setbacks || []), newSetback]; await updateDoc(doc(db, COLLECTION_PROJECTS, project.id), { setbacks: updatedSetbacks }); logActivity(`Reported setback in ${project.title}`); };
+
+  const handleSaveProject = async (e) => {
+      e.preventDefault();
+      const projectData = {
+          ...projForm,
+          crew: crewList, 
+          progress: 0,
+          status: 'Active',
+          updatedAt: serverTimestamp()
+      };
+
+      if (view === 'create') {
+          await addDoc(collection(db, COLLECTION_PROJECTS), { ...projectData, setbacks: [], dataLogs: [], callSheets: [], createdAt: serverTimestamp() });
+          logActivity(`Initiated Mission: ${projForm.title}`);
+      } else if (view === 'edit' && selectedProject) {
+          await updateDoc(doc(db, COLLECTION_PROJECTS, selectedProject.id), projectData);
+          logActivity(`Updated Mission: ${projForm.title}`);
+      }
+      setView('list');
+      setProjForm({ title: '', type: 'Production', startDate: '', endDate: '', callTime: '', callLocation: '', crew: [] });
+  };
+
+  const handleDeleteProject = async () => {
+      if (!selectedProject) return;
+      if (confirm(`ABORT MISSION: ${selectedProject.title}? This cannot be undone.`)) {
+          await deleteDoc(doc(db, COLLECTION_PROJECTS, selectedProject.id));
+          logActivity(`Aborted Mission: ${selectedProject.title}`);
+          setView('list');
+          setSelectedProject(null);
+      }
+  };
 
   const handleAddDataLog = async (e, project) => {
       e.preventDefault();
@@ -597,39 +735,237 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
   };
   const [setbackSuccess, setSetbackSuccess] = useState(false);
   const onSetbackSubmit = async (e, project) => { e.preventDefault(); await handleAddSetback(e.target.setback.value, project); e.target.reset(); setSetbackSuccess(true); setTimeout(() => setSetbackSuccess(false), 2000); };
+  const handleAddSetback = async (text, project) => { const newSetback = { id: Date.now(), text, date: new Date().toISOString(), status: 'Active' }; const updatedSetbacks = [...(project.setbacks || []), newSetback]; await updateDoc(doc(db, COLLECTION_PROJECTS, project.id), { setbacks: updatedSetbacks }); logActivity(`Reported setback in ${project.title}`); };
 
-  const isAssignedToProject = selectedProject ? Object.values(selectedProject.assignments || {}).includes(currentUser.uid) : false;
+  // Call Sheet Logic
+  const handleCallSheetUpload = (e) => {
+      const file = e.target.files[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+              const newSheet = { id: Date.now(), name: file.name, type: 'file', url: reader.result, uploadedBy: currentUser.displayName, date: new Date().toISOString() };
+              const updatedSheets = [...(selectedProject.callSheets || []), newSheet];
+              await updateDoc(doc(db, COLLECTION_PROJECTS, selectedProject.id), { callSheets: updatedSheets });
+              logActivity(`Uploaded Call Sheet: ${file.name}`);
+          };
+          reader.readAsDataURL(file);
+      }
+  };
 
-  if (view === 'create') return (
+  const handleAddCallSheetLink = async () => {
+      if (!callSheetLink.trim()) return;
+      const newSheet = { id: Date.now(), name: 'External Call Sheet', type: 'link', url: callSheetLink, uploadedBy: currentUser.displayName, date: new Date().toISOString() };
+      const updatedSheets = [...(selectedProject.callSheets || []), newSheet];
+      await updateDoc(doc(db, COLLECTION_PROJECTS, selectedProject.id), { callSheets: updatedSheets });
+      setCallSheetLink('');
+      logActivity(`Linked Call Sheet`);
+  };
+
+  const handleDeleteCallSheet = async (sheetId) => {
+      const updatedSheets = (selectedProject.callSheets || []).filter(s => s.id !== sheetId);
+      await updateDoc(doc(db, COLLECTION_PROJECTS, selectedProject.id), { callSheets: updatedSheets });
+  };
+
+  const updateCrewMember = (idx, field, value) => {
+      const updated = [...crewList];
+      updated[idx][field] = value;
+      setCrewList(updated);
+  };
+
+  const addCustomRole = () => {
+      setCrewList([...crewList, { id: Date.now(), roleName: 'New Role', userId: '' }]);
+      setEditingRoleIndex(crewList.length); 
+  };
+
+  const removeRole = (idx) => {
+      setCrewList(crewList.filter((_, i) => i !== idx));
+  };
+
+  const isAssignedToProject = selectedProject ? (
+      (selectedProject.crew && selectedProject.crew.some(c => c.userId === currentUser.uid)) ||
+      (selectedProject.assignments && Object.values(selectedProject.assignments).includes(currentUser.uid))
+  ) : false;
+
+  if (view === 'create' || view === 'edit') return (
     <div className="bg-zinc-900 p-6 md:p-8 rounded-3xl border border-zinc-800 animate-in fade-in zoom-in-95">
-       <div className="flex items-center gap-4 mb-8 border-b border-zinc-800 pb-6"><button onClick={() => setView('list')} className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition"><ArrowLeft size={20} /></button><h2 className="text-xl md:text-2xl font-black text-white uppercase tracking-wide">Initialize Mission</h2></div>
-       <form onSubmit={handleCreate} className="space-y-8 max-w-4xl">
+       <div className="flex items-center gap-4 mb-8 border-b border-zinc-800 pb-6">
+           <button onClick={() => setView(view === 'edit' ? 'details' : 'list')} className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition"><ArrowLeft size={20} /></button>
+           <h2 className="text-xl md:text-2xl font-black text-white uppercase tracking-wide">{view === 'create' ? 'Initialize Mission' : 'Modify Mission Parameters'}</h2>
+       </div>
+       <form onSubmit={handleSaveProject} className="space-y-8 max-w-4xl">
           <div className="space-y-4">
-              <input className="w-full bg-black p-4 rounded-xl border border-zinc-800 text-white focus:border-white outline-none text-lg font-bold" placeholder="Operation Name" value={newProj.title} onChange={e=>setNewProj({...newProj, title: e.target.value})} required />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">{['Pre-Production', 'Production', 'Post-Production'].map(type => (<button type="button" key={type} onClick={() => setNewProj({...newProj, type, assignments: {}})} className={`p-3 rounded-xl border-2 text-[10px] md:text-xs font-bold uppercase tracking-widest transition ${newProj.type === type ? 'bg-emerald-900/20 border-emerald-500 text-emerald-400' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>{type}</button>))}</div>
+              <input className="w-full bg-black p-4 rounded-xl border border-zinc-800 text-white focus:border-white outline-none text-lg font-bold" placeholder="Operation Name" value={projForm.title} onChange={e=>setProjForm({...projForm, title: e.target.value})} required />
+              
+              {view === 'create' && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {Object.keys(ROLE_TEMPLATES).map(type => (
+                          <button type="button" key={type} onClick={() => setProjForm({...projForm, type})} className={`p-3 rounded-xl border-2 text-[10px] md:text-xs font-bold uppercase tracking-widest transition ${projForm.type === type ? 'bg-emerald-900/20 border-emerald-500 text-emerald-400' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>{type}</button>
+                      ))}
+                  </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800"><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Mission Timeline</label><div className="flex gap-2"><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">Start</span><input type="date" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" value={newProj.startDate} onChange={e=>setNewProj({...newProj, startDate: e.target.value})} required /></div><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">End</span><input type="date" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" value={newProj.endDate} onChange={e=>setNewProj({...newProj, endDate: e.target.value})} required /></div></div></div>
-                  <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800"><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Call Details</label><div className="flex gap-2"><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">Call Time</span><input type="time" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" value={newProj.callTime} onChange={e=>setNewProj({...newProj, callTime: e.target.value})} required /></div><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">Location</span><input type="text" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" placeholder="e.g. Studio A" value={newProj.callLocation} onChange={e=>setNewProj({...newProj, callLocation: e.target.value})} required /></div></div></div>
+                  <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800"><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Mission Timeline</label><div className="flex gap-2"><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">Start</span><input type="date" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" value={projForm.startDate} onChange={e=>setProjForm({...projForm, startDate: e.target.value})} required /></div><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">End</span><input type="date" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" value={projForm.endDate} onChange={e=>setProjForm({...projForm, endDate: e.target.value})} required /></div></div></div>
+                  <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800"><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Call Details</label><div className="flex gap-2"><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">Call Time</span><input type="time" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" value={projForm.callTime} onChange={e=>setProjForm({...projForm, callTime: e.target.value})} required /></div><div className="flex-1"><span className="text-[10px] text-zinc-600 uppercase block mb-1">Location</span><input type="text" className="w-full bg-black p-2 rounded-lg border border-zinc-800 text-white text-sm" placeholder="e.g. Studio A" value={projForm.callLocation} onChange={e=>setProjForm({...projForm, callLocation: e.target.value})} required /></div></div></div>
               </div>
           </div>
-          <div className="bg-black/30 p-6 rounded-2xl border border-zinc-800"><h3 className="text-zinc-400 text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2"><Users size={14}/> {newProj.type} Manifest</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{Object.entries(currentRoles).map(([deptName, roles]) => (<div key={deptName} className="flex flex-col gap-2"><h4 className="text-emerald-500 text-[10px] font-black uppercase">{deptName}</h4>{roles.map(role => (<div key={role} className="flex flex-col"><label className="text-[10px] text-zinc-500 font-bold mb-1">{role}</label><select className="bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-xs text-white outline-none focus:border-zinc-600" value={newProj.assignments[role] || ''} onChange={(e) => setNewProj({...newProj, assignments: {...newProj.assignments, [role]: e.target.value}})}><option value="">-- Select --</option>{users.map(u => <option key={u.uid} value={u.uid}>{u.displayName}</option>)}</select></div>))}</div>))}</div></div>
-          <button className="w-full bg-white text-black font-black py-4 rounded-xl uppercase tracking-widest hover:bg-emerald-400 hover:text-black transition">Launch Mission</button>
+
+          <div className="bg-black/30 p-6 rounded-2xl border border-zinc-800">
+              <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-zinc-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2"><Users size={14}/> Crew Manifest</h3>
+                  <button type="button" onClick={addCustomRole} className="text-[10px] flex items-center gap-1 bg-emerald-900/30 text-emerald-400 px-3 py-1 rounded hover:bg-emerald-900/50 transition font-bold"><Plus size={12}/> ADD ROLE</button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {crewList.map((member, idx) => (
+                      <div key={member.id} className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 flex items-center gap-2 group">
+                          <div className="w-1/3 relative">
+                              {editingRoleIndex === idx ? (
+                                  <input 
+                                      autoFocus
+                                      className="w-full bg-black border border-emerald-500 text-emerald-400 text-[10px] font-black uppercase p-1 rounded outline-none"
+                                      value={member.roleName}
+                                      onChange={(e) => updateCrewMember(idx, 'roleName', e.target.value)}
+                                      onBlur={() => setEditingRoleIndex(null)}
+                                      onKeyDown={(e) => e.key === 'Enter' && setEditingRoleIndex(null)}
+                                  />
+                              ) : (
+                                  <div className="flex items-center gap-2 group-hover:text-white transition cursor-pointer" onClick={() => setEditingRoleIndex(idx)}>
+                                      <span className="text-[10px] font-black uppercase text-zinc-500 truncate">{member.roleName}</span>
+                                      <Edit2 size={10} className="text-zinc-600 opacity-0 group-hover:opacity-100 transition"/>
+                                  </div>
+                              )}
+                          </div>
+
+                          <select 
+                              className="flex-1 bg-black border border-zinc-800 rounded-lg p-2 text-xs text-white outline-none focus:border-zinc-600"
+                              value={member.userId}
+                              onChange={(e) => updateCrewMember(idx, 'userId', e.target.value)}
+                          >
+                              <option value="">-- Unassigned --</option>
+                              {users.map(u => <option key={u.uid} value={u.uid}>{u.displayName} (@{u.username})</option>)}
+                          </select>
+
+                          <button type="button" onClick={() => removeRole(idx)} className="text-zinc-600 hover:text-red-500 p-1"><X size={14}/></button>
+                      </div>
+                  ))}
+              </div>
+          </div>
+
+          <button className="w-full bg-white text-black font-black py-4 rounded-xl uppercase tracking-widest hover:bg-emerald-400 hover:text-black transition">{view === 'create' ? 'Launch Mission' : 'Update Mission'}</button>
        </form>
     </div>
   );
 
   if (view === 'details' && selectedProject) {
       const calculatedProgress = calculateProgress(selectedProject.startDate, selectedProject.endDate);
+      const displayCrew = selectedProject.crew || 
+          (selectedProject.assignments ? Object.entries(selectedProject.assignments).map(([role, uid]) => ({ roleName: role, userId: uid })) : []);
+
       return (
       <div className="space-y-8 animate-in slide-in-from-right-10">
-          <div className="flex flex-col md:flex-row md:items-center gap-4 mb-6">
-            <button onClick={() => setView('list')} className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition w-fit"><ArrowLeft size={20} /></button>
-            <div><h2 className="text-2xl md:text-3xl font-black text-white uppercase break-words">{selectedProject.title}</h2><div className="flex flex-wrap gap-3 mt-1 text-xs font-mono text-zinc-400"><span className="flex items-center gap-1"><MapPin size={12} className="text-emerald-500"/> {selectedProject.callLocation}</span><span className="flex items-center gap-1"><Clock size={12} className="text-purple-500"/> Call: {selectedProject.callTime}</span><span className="bg-zinc-800 px-2 rounded border border-zinc-700 text-white whitespace-nowrap">{selectedProject.type}</span></div></div>
+          <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
+            <div className="flex items-center gap-4">
+                <button onClick={() => setView('list')} className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition w-fit"><ArrowLeft size={20} /></button>
+                <div>
+                    <h2 className="text-2xl md:text-3xl font-black text-white uppercase break-words">{selectedProject.title}</h2>
+                    <div className="flex flex-wrap gap-3 mt-1 text-xs font-mono text-zinc-400">
+                        <span className="flex items-center gap-1"><MapPin size={12} className="text-emerald-500"/> {selectedProject.callLocation}</span>
+                        <span className="flex items-center gap-1"><Clock size={12} className="text-purple-500"/> Call: {selectedProject.callTime}</span>
+                        <span className="bg-zinc-800 px-2 rounded border border-zinc-700 text-white whitespace-nowrap">{selectedProject.type}</span>
+                    </div>
+                </div>
+            </div>
+            {isAdmin && (
+                <div className="flex gap-2">
+                    <button onClick={() => setView('edit')} className="bg-zinc-800 hover:bg-white hover:text-black text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition flex items-center gap-2"><Edit2 size={14}/> Edit Ops</button>
+                    <button onClick={handleDeleteProject} className="bg-red-900/20 hover:bg-red-600 text-red-500 hover:text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition flex items-center gap-2"><Trash2 size={14}/> Abort</button>
+                </div>
+            )}
           </div>
-          <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800"><div className="flex justify-between text-xs font-bold text-zinc-400 uppercase mb-2"><span>Timeline Progress (Auto)</span><span>{calculatedProgress}%</span></div><div className="w-full bg-black h-4 rounded-full overflow-hidden border border-zinc-800 relative"><div className="bg-gradient-to-r from-emerald-500 to-blue-500 h-full transition-all duration-500" style={{ width: `${calculatedProgress}%` }}></div>{[25, 50, 75].map(p => <div key={p} className="absolute top-0 bottom-0 w-px bg-black/30" style={{left: `${p}%`}}></div>)}</div></div>
+
+          <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
+              <div className="flex justify-between text-xs font-bold text-zinc-400 uppercase mb-2"><span>Timeline Progress (Auto)</span><span>{calculatedProgress}%</span></div>
+              <div className="w-full bg-black h-4 rounded-full overflow-hidden border border-zinc-800 relative">
+                  <div className="bg-gradient-to-r from-emerald-500 to-blue-500 h-full transition-all duration-500" style={{ width: `${calculatedProgress}%` }}></div>
+                  {[25, 50, 75].map(p => <div key={p} className="absolute top-0 bottom-0 w-px bg-black/30" style={{left: `${p}%`}}></div>)}
+              </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-8">
-                  <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800"><h3 className="text-white font-bold flex items-center gap-2 mb-4"><Users className="text-purple-500"/> Assigned Crew</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{Object.entries(selectedProject.assignments || {}).map(([role, uid]) => { const user = users.find(u => u.uid === uid); if (!uid) return null; return (<div key={role} className="flex items-center gap-3 p-2 bg-black/40 rounded-lg border border-zinc-800"><div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0"><img src={user?.avatar} className="w-full h-full object-cover"/></div><div><p className="text-[10px] font-bold text-zinc-500 uppercase">{role}</p><p className="text-sm text-white font-bold">{user?.displayName || 'Unknown'}</p></div></div>) })}</div></div>
+                  {/* CALL SHEET MODULE */}
+                  <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800">
+                      <h3 className="text-white font-bold flex items-center gap-2 mb-4"><FileText className="text-amber-500"/> Tactical Call Sheet</h3>
+                      
+                      {selectedProject.callSheets && selectedProject.callSheets.length > 0 ? (
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                              {selectedProject.callSheets.map((sheet) => (
+                                  <div key={sheet.id} className="bg-black/40 border border-zinc-800 rounded-xl p-3 relative group">
+                                      {sheet.type === 'link' ? (
+                                          <a href={sheet.url} target="_blank" rel="noreferrer" className="block text-center hover:opacity-80 transition">
+                                              <ExternalLink size={24} className="text-blue-400 mx-auto mb-2"/>
+                                              <p className="text-[10px] text-white font-bold truncate">{sheet.name}</p>
+                                          </a>
+                                      ) : (
+                                          <div className="text-center">
+                                              {/* Simple heuristic: if it starts with data:image, show preview, else show icon */}
+                                              {sheet.url.startsWith('data:image') ? (
+                                                  <img src={sheet.url} className="w-full h-20 object-cover rounded-lg mb-2 border border-zinc-800" />
+                                              ) : (
+                                                  <FileText size={24} className="text-zinc-400 mx-auto mb-2"/>
+                                              )}
+                                              <p className="text-[10px] text-white font-bold truncate">{sheet.name}</p>
+                                          </div>
+                                      )}
+                                      <div className="text-[9px] text-zinc-500 text-center mt-1">{new Date(sheet.date).toLocaleDateString()}</div>
+                                      {isAdmin && (
+                                          <button onClick={() => handleDeleteCallSheet(sheet.id)} className="absolute top-1 right-1 bg-red-900/80 text-red-200 p-1 rounded-full opacity-0 group-hover:opacity-100 transition"><X size={10}/></button>
+                                      )}
+                                  </div>
+                              ))}
+                          </div>
+                      ) : (
+                          <p className="text-zinc-600 text-sm italic mb-4">No call sheets issued for this operation.</p>
+                      )}
+
+                      {isAdmin && (
+                          <div className="flex flex-col gap-2 border-t border-zinc-800 pt-4">
+                              <div className="flex gap-2">
+                                  <button onClick={() => callSheetInputRef.current.click()} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><Upload size={14}/> Upload File / Img</button>
+                                  <input type="file" ref={callSheetInputRef} className="hidden" onChange={handleCallSheetUpload} />
+                              </div>
+                              <div className="flex gap-2 bg-black/40 p-2 rounded-xl border border-zinc-800">
+                                  <input 
+                                      className="bg-transparent text-white text-xs w-full outline-none px-2" 
+                                      placeholder="Or paste external link (Drive/Dropbox)..." 
+                                      value={callSheetLink}
+                                      onChange={(e) => setCallSheetLink(e.target.value)}
+                                  />
+                                  <button onClick={handleAddCallSheetLink} className="bg-zinc-800 hover:bg-emerald-600 text-white p-2 rounded-lg transition"><Plus size={14}/></button>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+
+                  <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800">
+                      <h3 className="text-white font-bold flex items-center gap-2 mb-4"><Users className="text-purple-500"/> Assigned Crew</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {displayCrew.map((member, idx) => { 
+                              const user = users.find(u => u.uid === member.userId); 
+                              return (
+                                  <div key={idx} className="flex items-center gap-3 p-2 bg-black/40 rounded-lg border border-zinc-800">
+                                      <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0 border border-zinc-700">
+                                          <img src={user?.avatar || `https://api.dicebear.com/9.x/avataaars/svg?seed=unknown`} className="w-full h-full object-cover"/>
+                                      </div>
+                                      <div>
+                                          <p className="text-[10px] font-bold text-zinc-500 uppercase">{member.roleName}</p>
+                                          <p className={`text-sm font-bold ${user ? 'text-white' : 'text-zinc-600 italic'}`}>{user?.displayName || 'Unassigned'}</p>
+                                      </div>
+                                  </div>
+                              ) 
+                          })}
+                      </div>
+                  </div>
                   <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800">
                     <h3 className="text-white font-bold flex items-center gap-2 mb-4"><HardDrive className="text-blue-500"/> Footage & Data Logs</h3>
                     <div className="space-y-2 mb-4 max-h-64 overflow-y-auto custom-scrollbar pr-2">
@@ -667,64 +1003,17 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
   );
 };
 
-const AvatarSelector = ({ currentAvatar, onSelect }) => {
-  const [style, setStyle] = useState('avataaars');
-  const [seed, setSeed] = useState(Math.random().toString(36).substring(7));
-  const previews = useMemo(() => Array.from({ length: 6 }).map((_, i) => ({ id: i, url: `https://api.dicebear.com/9.x/${style}/svg?seed=${seed}-${i}` })), [style, seed]);
-  return (
-    <div className="bg-black/30 p-6 rounded-2xl border border-zinc-700/50 mt-6 animate-in fade-in slide-in-from-top-4">
-      <div className="flex justify-between items-center mb-6"><h4 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider"><Smile size={16} className="text-purple-500"/> Identity Module</h4><button onClick={() => setSeed(Math.random().toString(36))} className="text-xs text-zinc-500 hover:text-white flex items-center gap-1 transition"><RefreshCw size={12} /> REROLL</button></div>
-      <div className="flex gap-2 overflow-x-auto pb-4 mb-2 custom-scrollbar">{AVATAR_STYLES.map(s => <button key={s.id} onClick={() => setStyle(s.id)} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap ${style === s.id ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>{s.name}</button>)}</div>
-      <div className="grid grid-cols-3 gap-4">{previews.map((item) => (<button key={item.id} onClick={() => onSelect(item.url)} className="aspect-square rounded-xl bg-white border-2 border-transparent hover:border-purple-500 overflow-hidden relative group transition-all shadow-lg hover:shadow-purple-500/20"><img src={item.url} className="w-full h-full object-cover" loading="lazy" />{currentAvatar === item.url && <div className="absolute inset-0 bg-purple-600/50 flex items-center justify-center backdrop-blur-sm animate-in zoom-in"><CheckCircle className="text-white w-8 h-8" /></div>}</button>))}</div>
-    </div>
-  );
-};
-
-const ProfileSettings = ({currentUser, logActivity, setSuccessMessage}) => {
-  const [data, setData] = useState(currentUser || { displayName: '', bio: '', avatar: '' });
-  const [showAv, setShowAv] = useState(false);
-
-  useEffect(() => { if (currentUser) setData(currentUser); }, [currentUser]);
-
-  const save = async (e) => { 
-    e.preventDefault(); 
-    await updateDoc(doc(db, COLLECTION_USERS, currentUser.uid), { displayName: data.displayName, bio: data.bio || '', avatar: data.avatar }); 
-    logActivity(`Updated profile`); 
-    setSuccessMessage("IDENTITY UPDATED");
-    setTimeout(() => setSuccessMessage(""), 2000);
-    setShowAv(false); 
-  };
-
-  if (!data) return <div className="text-zinc-500">Loading profile...</div>;
-
-  return (
-    <div className="max-w-2xl mx-auto bg-zinc-900 p-10 rounded-3xl border border-zinc-800">
-       <div className="flex items-center gap-6 mb-8">
-           <div className="w-24 h-24 rounded-2xl bg-white border-4 border-zinc-800 overflow-hidden shadow-2xl relative"><img src={data.avatar} className="w-full h-full object-cover"/></div>
-           <div><h3 className="text-white font-bold text-xl">{data.displayName}</h3><button onClick={()=>setShowAv(!showAv)} className="text-purple-400 text-xs font-bold uppercase tracking-wider hover:text-white mt-2">Change Appearance</button></div>
-       </div>
-       {showAv && <AvatarSelector currentAvatar={data.avatar} onSelect={(url) => { setData({...data, avatar: url}); setShowAv(false); }} />}
-       <form onSubmit={save} className="space-y-6 mt-6">
-         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Codename</label><input value={data.displayName || ''} onChange={e=>setData({...data, displayName:e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none"/></div>
-         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Bio / Status</label><textarea value={data.bio || ''} onChange={e=>setData({...data, bio:e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none h-32 resize-none"/></div>
-         <button className="bg-white text-black px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-purple-50 transition w-full">Save Identity</button>
-       </form>
-    </div>
-  );
-};
-
-const TeamManager = ({ users, currentUser, logActivity }) => {
-  const handleDelete = async (user) => { if(confirm(`Remove ${user.displayName}?`)) { await deleteDoc(doc(db, COLLECTION_USERS, user.uid)); logActivity(`Removed user: ${user.displayName}`); }};
-  return (
-    <div className="max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Users className="text-amber-500" /> CLAN ROSTER</h2><span className="text-xs text-zinc-500 bg-zinc-900 px-4 py-2 rounded-full border border-zinc-800 font-bold uppercase tracking-widest">Active: {users.length}</span></div><div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">{users.map(u => (<div key={u.uid} className="bg-zinc-900/50 p-6 rounded-3xl border border-zinc-800 hover:border-purple-500/30 transition group flex flex-col items-center text-center gap-4"><div className="w-20 h-20 rounded-full bg-black border-2 border-zinc-700 overflow-hidden group-hover:scale-110 transition shadow-xl"><img src={u.avatar || `https://api.dicebear.com/9.x/avataaars/svg?seed=${u.uid}`} className="w-full h-full object-cover"/></div><div><p className="text-white font-black text-lg flex items-center justify-center gap-2">{u.displayName || 'Unknown Agent'}{u.uid === currentUser.uid && <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded">YOU</span>}</p><p className="text-xs text-purple-400 font-mono mt-1 uppercase tracking-widest">{u.role || 'N/A'}</p><p className="text-xs text-zinc-600 mt-2">@{u.username || '---'}</p></div>{currentUser.role === 'admin' && u.uid !== currentUser.uid && (<button onClick={() => handleDelete(u)} className="mt-2 p-2 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition w-full flex justify-center"><Trash2 size={16} /></button>)}</div>))}</div></div>
-  );
-};
-
 // --- UPDATED BOOKING SYSTEM (ARMORY & LABS) ---
 const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, productionStatus }) => {
   const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
   const [requestingResId, setRequestingResId] = useState(null); 
   const [requestMessage, setRequestMessage] = useState('');
+  
+  // New Booking Modal State
+  const [bookingModal, setBookingModal] = useState(null); // { resource, dateStr }
+  const [bookingPurpose, setBookingPurpose] = useState('Learning');
+  const [bookingDesc, setBookingDesc] = useState('');
+
   const bookingsForDate = useMemo(() => bookings.filter(b => b.dateStr === selectedDate && b.status === 'active'), [bookings, selectedDate]);
   
   // Filter for requests sent TO Ray (admin only)
@@ -733,18 +1022,65 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
       return requests.filter(r => r.ownerId === 'RAY_ADMIN' && r.status === 'pending');
   }, [requests, currentUser.role]);
 
-  const handleBook = async (resource) => {
-    if (!productionStatus) return; // Prevent booking if production is offline
-    const isBooked = bookingsForDate.find(b => b.resourceId === resource.id);
-    if (isBooked && isBooked.userId === currentUser.uid) { 
-        await deleteDoc(doc(db, COLLECTION_BOOKINGS, isBooked.id)); 
-        logActivity(`Released ${resource.name}`); 
-        return; 
-    }
-    if (!isBooked) { 
-        await addDoc(collection(db, COLLECTION_BOOKINGS), { resourceId: resource.id, resourceName: resource.name, userId: currentUser.uid, userName: currentUser.displayName, startTime: serverTimestamp(), status: 'active', dateStr: selectedDate }); 
-        logActivity(`Booked ${resource.name}`); 
-    }
+  // COOLDOWN LOGIC
+  const checkCooldown = (resourceId, userId, targetDateStr) => {
+      // Admins bypass cooldown
+      if (currentUser.role === 'admin' || currentUser.role === 'staff') return true;
+
+      const target = new Date(targetDateStr);
+      const oneDayBefore = new Date(target); oneDayBefore.setDate(target.getDate() - 1);
+      const twoDaysBefore = new Date(target); twoDaysBefore.setDate(target.getDate() - 2);
+
+      const str1 = formatDate(oneDayBefore);
+      const str2 = formatDate(twoDaysBefore);
+
+      const bookedYesterday = bookings.some(b => b.userId === userId && b.resourceId === resourceId && b.dateStr === str1 && b.status === 'active');
+      const bookedDayBefore = bookings.some(b => b.userId === userId && b.resourceId === resourceId && b.dateStr === str2 && b.status === 'active');
+
+      if (bookedYesterday && bookedDayBefore) {
+          return false; // Blocked
+      }
+      return true; // Allowed
+  };
+
+  const initiateBooking = (resource) => {
+      if (!productionStatus) return;
+      
+      const isAllowed = checkCooldown(resource.id, currentUser.uid, selectedDate);
+      if (!isAllowed) {
+          alert("COOLDOWN ACTIVE: You have booked this asset for 2 consecutive days. Take a 24h break or ask an Admin to override.");
+          return;
+      }
+
+      // Open Modal
+      setBookingModal({ resource, dateStr: selectedDate });
+      setBookingPurpose('Learning');
+      setBookingDesc('');
+  };
+
+  const confirmBooking = async (e) => {
+      e.preventDefault();
+      if (!bookingModal) return;
+
+      await addDoc(collection(db, COLLECTION_BOOKINGS), { 
+          resourceId: bookingModal.resource.id, 
+          resourceName: bookingModal.resource.name, 
+          userId: currentUser.uid, 
+          userName: currentUser.displayName, 
+          startTime: serverTimestamp(), 
+          status: 'active', 
+          dateStr: bookingModal.dateStr,
+          purpose: bookingPurpose,
+          description: bookingDesc
+      }); 
+      
+      logActivity(`Booked ${bookingModal.resource.name} for ${bookingPurpose}`);
+      setBookingModal(null);
+  };
+
+  const handleRelease = async (bookingId, resName) => {
+      await deleteDoc(doc(db, COLLECTION_BOOKINGS, bookingId)); 
+      logActivity(`Released ${resName}`); 
   };
 
   const sendRequest = async (resource, booking) => {
@@ -769,7 +1105,9 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
           userName: req.requesterName,
           startTime: serverTimestamp(),
           status: 'active',
-          dateStr: selectedDate // Grants access for TODAY/Selected Date
+          dateStr: selectedDate, // Grants access for TODAY/Selected Date
+          purpose: 'Approved Request',
+          description: req.message
       });
       // 2. Mark request as approved
       await updateDoc(doc(db, COLLECTION_REQUESTS, req.id), { status: 'approved' });
@@ -777,7 +1115,7 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 relative">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
           <h2 className="text-3xl font-black text-white flex items-center gap-3"><Clock className="text-purple-500" /> ARMORY & LABS</h2>
           <div className="flex items-center gap-3 bg-zinc-900 p-2 rounded-xl border border-zinc-800">
@@ -838,9 +1176,20 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
               
               {activeBooking && (
                   <div className="mb-6">
-                      <div className="bg-black/40 rounded-xl p-3 border border-zinc-800 flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700"><img src={bookedByUser?.avatar} className="w-full h-full object-cover"/></div>
-                          <div><p className="text-[10px] text-zinc-500 uppercase font-bold">Operator</p><p className="text-sm font-bold text-white truncate">{bookedByUser?.displayName}</p></div>
+                      <div className="bg-black/40 rounded-xl p-3 border border-zinc-800 flex flex-col gap-2">
+                          <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700"><img src={bookedByUser?.avatar} className="w-full h-full object-cover"/></div>
+                              <div>
+                                  <p className="text-[10px] text-zinc-500 uppercase font-bold">Operator</p>
+                                  <p className="text-sm font-bold text-white truncate">{bookedByUser?.displayName}</p>
+                              </div>
+                          </div>
+                          {activeBooking.purpose && (
+                              <div className="mt-1 pt-2 border-t border-zinc-800/50">
+                                  <span className="text-[9px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded uppercase font-bold">{activeBooking.purpose}</span>
+                                  <p className="text-xs text-zinc-300 mt-1 italic line-clamp-2">"{activeBooking.description}"</p>
+                              </div>
+                          )}
                       </div>
                       {isMine && pendingRequests.map(req => (<div key={req.id} className="mt-3 bg-amber-900/10 p-3 rounded-xl border border-amber-500/20"><p className="text-xs text-amber-200 mb-2 font-mono">REQ: "{req.message}"</p><button onClick={() => handleHandover(req, activeBooking)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg transition">AUTHORIZE HANDOVER</button></div>))}
                   </div>
@@ -862,10 +1211,14 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
                   ) : (
                       // STANDARD ARMORY LOGIC
                       activeBooking ? (
-                          isMine ? <button onClick={() => handleBook(res)} className="w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition">Release System</button> 
+                          // If mine, allow release. If Admin, allow forced release (clears cooldown for user essentially).
+                          (isMine || currentUser.role === 'admin') ? 
+                              <button onClick={() => handleRelease(activeBooking.id, res.name)} className="w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition">
+                                  {isMine ? 'Release System' : 'Override Release'}
+                              </button> 
                           : ( requestingResId === res.id ? (<div className="flex gap-2"><input autoFocus className="flex-1 bg-black text-white text-xs p-3 rounded-xl border border-zinc-700 outline-none focus:border-purple-500" placeholder="Reason..." value={requestMessage} onChange={e=>setRequestMessage(e.target.value)}/><button onClick={() => sendRequest(res, activeBooking)} className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-4 rounded-xl font-bold"><Send size={14}/></button></div>) : <button onClick={() => setRequestingResId(res.id)} className="w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 transition">Request Access</button>)
                       ) : (
-                          <button onClick={() => handleBook(res)} disabled={!productionStatus} className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition shadow-lg ${!productionStatus ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-white text-black hover:bg-purple-50 shadow-white/10'}`}>Secure Asset</button>
+                          <button onClick={() => initiateBooking(res)} disabled={!productionStatus} className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition shadow-lg ${!productionStatus ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-white text-black hover:bg-purple-50 shadow-white/10'}`}>Secure Asset</button>
                       )
                   )}
               </div>
@@ -873,6 +1226,51 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
           );
         })}
       </div>
+
+      {/* BOOKING MODAL */}
+      {bookingModal && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/90 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-md p-6 shadow-2xl relative">
+                  <button onClick={() => setBookingModal(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
+                  <h3 className="text-xl font-black text-white mb-1 uppercase">Confirm Reservation</h3>
+                  <p className="text-zinc-500 text-xs font-mono mb-6">{bookingModal.resource.name} // {bookingModal.dateStr}</p>
+                  
+                  <form onSubmit={confirmBooking} className="space-y-4">
+                      <div>
+                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Operation Type</label>
+                          <div className="grid grid-cols-3 gap-2">
+                              {['Learning', 'Paid Work', 'Office Production'].map(type => (
+                                  <button 
+                                      type="button" 
+                                      key={type}
+                                      onClick={() => setBookingPurpose(type)} 
+                                      className={`p-2 rounded-xl text-[10px] font-bold uppercase transition border ${bookingPurpose === type ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
+                                  >
+                                      {type === 'Learning' && <GraduationCap size={14} className="mx-auto mb-1"/>}
+                                      {type === 'Paid Work' && <WorkIcon size={14} className="mx-auto mb-1"/>}
+                                      {type === 'Office Production' && <Building2 size={14} className="mx-auto mb-1"/>}
+                                      {type}
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+                      
+                      <div>
+                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Intel / Description</label>
+                          <textarea 
+                              className="w-full bg-black border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-emerald-500 outline-none h-24 resize-none placeholder:text-zinc-700" 
+                              placeholder="Describe your task (e.g. Rendering Scene 04, Learning Blender nodes...)"
+                              value={bookingDesc}
+                              onChange={(e) => setBookingDesc(e.target.value)}
+                              required
+                          />
+                      </div>
+
+                      <button className="w-full bg-white text-black font-black py-4 rounded-xl uppercase tracking-widest hover:bg-emerald-400 transition">Confirm Booking</button>
+                  </form>
+              </div>
+          </div>
+      )}
     </div>
   );
 };
@@ -915,6 +1313,8 @@ const App = () => {
   const [screenings, setScreenings] = useState([]);
   const [polls, setPolls] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
+  const [hiddenProjectIds, setHiddenProjectIds] = useState([]);
+  const [showHidden, setShowHidden] = useState(false); // Toggle to show hidden projects
 
   // Auth & Init
   useEffect(() => {
@@ -933,6 +1333,12 @@ const App = () => {
 
   // Notifications
   useEffect(() => { if (currentUser && "Notification" in window && Notification.permission !== "granted") Notification.requestPermission(); }, [currentUser]);
+
+  // Load hidden preferences
+  useEffect(() => {
+      const hidden = localStorage.getItem('clan_yujo_hidden_projects');
+      if (hidden) setHiddenProjectIds(JSON.parse(hidden));
+  }, []);
 
   // Data Streams
   useEffect(() => {
@@ -961,6 +1367,18 @@ const App = () => {
   const handleManualLogin = (userData) => { localStorage.setItem('clan_yujo_uid', userData.uid); setCurrentUser(userData); };
   const handleLogout = () => { localStorage.removeItem('clan_yujo_uid'); setCurrentUser(null); setActiveTab('dashboard'); };
 
+  const toggleHideProject = (e, pid) => {
+      e.stopPropagation();
+      let newHidden;
+      if (hiddenProjectIds.includes(pid)) {
+          newHidden = hiddenProjectIds.filter(id => id !== pid);
+      } else {
+          newHidden = [...hiddenProjectIds, pid];
+      }
+      setHiddenProjectIds(newHidden);
+      localStorage.setItem('clan_yujo_hidden_projects', JSON.stringify(newHidden));
+  };
+
   // TOGGLE PRODUCTION (ADMIN ONLY)
   const toggleProduction = async () => {
       const newStatus = !productionStatus;
@@ -970,6 +1388,13 @@ const App = () => {
 
   if (!isAuthReady) return <div className="min-h-screen bg-black flex flex-col items-center justify-center text-zinc-600 font-mono"><RefreshCw size={48} className="animate-spin text-purple-600 mb-6"/><p className="text-sm tracking-[0.3em] uppercase">CLAN YUJO // INITIALIZING</p></div>;
   if (!currentUser) return <LoginScreen onLogin={handleManualLogin} isAuthReady={isAuthReady} />;
+
+  // Display projects logic: If showHidden is true, show hidden ones too.
+  const dashboardProjects = projects.filter(p => {
+      const isHidden = hiddenProjectIds.includes(p.id);
+      if (showHidden) return true; // Show all if toggle is on
+      return !isHidden; // Otherwise only show unhidden
+  });
 
   return (
     <div className="min-h-screen bg-black text-zinc-200 font-sans flex flex-col lg:flex-row overflow-hidden">
@@ -1015,6 +1440,58 @@ const App = () => {
           {activeTab === 'dashboard' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-8">
+                {/* YOUR ACTIVE MISSIONS WIDGET */}
+                <div className="bg-gradient-to-r from-emerald-900/30 to-zinc-900 border border-emerald-500/20 p-6 rounded-3xl relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <Briefcase size={20} className="text-emerald-400"/>
+                            <h3 className="text-white font-black uppercase tracking-widest text-sm">Active Assignments</h3>
+                        </div>
+                        <button onClick={() => setShowHidden(!showHidden)} className="text-[10px] text-zinc-500 hover:text-white flex items-center gap-1 transition">
+                            {showHidden ? <Eye size={12}/> : <EyeOff size={12}/>} 
+                            {showHidden ? 'Hide Archives' : `Show Hidden (${hiddenProjectIds.length})`}
+                        </button>
+                    </div>
+                    {dashboardProjects.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {dashboardProjects.map(p => {
+                                const isHidden = hiddenProjectIds.includes(p.id);
+                                const myRoles = [];
+                                if (p.crew) {
+                                    p.crew.forEach(c => { if(c.userId === currentUser.uid) myRoles.push(c.roleName); });
+                                } else if (p.assignments) {
+                                    Object.entries(p.assignments).forEach(([r, uid]) => { if(uid === currentUser.uid) myRoles.push(r); });
+                                }
+                                const isMyMission = myRoles.length > 0;
+
+                                return (
+                                    <div key={p.id} onClick={() => { setSelectedProject(p); setActiveTab('projects'); }} className={`p-4 rounded-xl border transition cursor-pointer group relative ${isMyMission ? 'bg-zinc-950/90 border-emerald-500/50 hover:border-emerald-400' : (isHidden ? 'bg-zinc-900/30 border-dashed border-zinc-800 opacity-60 hover:opacity-100' : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700')}`}>
+                                        <div className="flex justify-between items-start">
+                                            <h4 className={`font-bold text-lg mb-1 truncate pr-6 ${isHidden ? 'text-zinc-500' : 'text-white'}`}>{p.title}</h4>
+                                            <button onClick={(e) => toggleHideProject(e, p.id)} className="text-zinc-600 hover:text-white p-1 rounded-full absolute top-2 right-2">
+                                                {isHidden ? <Eye size={14}/> : <EyeOff size={14}/>}
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-500 font-mono mb-3">{p.type} // {p.callLocation}</p>
+                                        
+                                        {isMyMission ? (
+                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                {myRoles.map((r, i) => (
+                                                    <span key={i} className="text-[10px] bg-emerald-500 text-black px-2 py-0.5 rounded font-black uppercase tracking-wide shadow-lg shadow-emerald-500/20">{r}</span>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="mt-2 text-[10px] text-zinc-600 uppercase font-bold tracking-widest">Status: Active</div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <p className="text-zinc-500 italic text-sm">No active operations available.</p>
+                    )}
+                </div>
+
                 <AnnouncementsWidget announcements={announcements} isAdmin={currentUser.role === 'admin'} logActivity={logActivity} />
                 {currentUser.role !== 'temp' && (<div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:h-96"><MovieDisplayWidget screening={screenings[0]} /><PollWidget poll={polls[0]} currentUser={currentUser} logActivity={logActivity} /></div>)}
                 <div className="bg-zinc-900/30 rounded-3xl border border-zinc-800 p-6 lg:p-8 backdrop-blur-sm">
@@ -1063,7 +1540,7 @@ const App = () => {
              </div>
         )}
         <NexusMenu isOpen={isNexusOpen} toggle={() => setIsNexusOpen(!isNexusOpen)} setActiveTab={setActiveTab} handleLogout={handleLogout} role={currentUser.role} openChat={() => setShowChat(true)} hasUnread={hasUnread} />
-        {showChat && <GlobalChat currentUser={currentUser} onClose={() => setShowChat(false)} />}
+        {showChat && <GlobalChat currentUser={currentUser} users={users} onClose={() => setShowChat(false)} />}
       </main>
     </div>
   );
