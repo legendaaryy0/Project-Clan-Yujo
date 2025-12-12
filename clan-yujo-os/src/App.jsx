@@ -118,6 +118,44 @@ const compressImage = (file, quality = 0.7, maxWidth = 1080) => {
 
 // --- COMPONENTS ---
 
+// AGENT DOSSIER
+const AgentDossier = ({ userId, users, onClose }) => {
+    const user = users.find(u => u.uid === userId);
+    if (!user) return null;
+
+    return (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative">
+                <button onClick={onClose} className="absolute top-4 right-4 text-zinc-400 hover:text-white bg-black/50 p-2 rounded-full z-10"><X size={18}/></button>
+                <div className="h-32 bg-gradient-to-r from-emerald-900/50 to-purple-900/50 relative">
+                    <div className="absolute -bottom-12 left-6 border-4 border-zinc-900 rounded-2xl overflow-hidden bg-black w-24 h-24 shadow-lg">
+                        <img src={user.avatar} className="w-full h-full object-cover" />
+                    </div>
+                </div>
+                <div className="pt-14 px-6 pb-8">
+                    <div className="mb-4">
+                        <h3 className="text-2xl font-black text-white leading-none">{user.displayName || 'Unknown Agent'}</h3>
+                        <p className="text-emerald-500 font-mono text-xs mt-1 flex items-center gap-1">
+                            <Hash size={12}/> {user.username || '---'} (ORIGINAL ID)
+                        </p>
+                    </div>
+                    <div className="space-y-3">
+                        <div className="bg-black/30 p-3 rounded-xl border border-zinc-800">
+                            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest block mb-1">Clearance</span>
+                            <span className="text-white text-sm font-bold capitalize">{user.role || 'Unassigned'}</span>
+                        </div>
+                        <div className="bg-black/30 p-3 rounded-xl border border-zinc-800">
+                            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest block mb-1">Status Report</span>
+                            <p className="text-zinc-300 text-sm leading-relaxed italic">"{user.bio || 'No status reported.'}"</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// LOGIN SCREEN
 const LoginScreen = ({ onLogin, isAuthReady }) => {
   const [mode, setMode] = useState('login'); 
   const [loginCreds, setLoginCreds] = useState({ username: '', password: '' });
@@ -224,43 +262,6 @@ const LoginScreen = ({ onLogin, isAuthReady }) => {
       </div>
     </div>
   );
-};
-
-// AGENT DOSSIER
-const AgentDossier = ({ userId, users, onClose }) => {
-    const user = users.find(u => u.uid === userId);
-    if (!user) return null;
-
-    return (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95">
-            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative">
-                <button onClick={onClose} className="absolute top-4 right-4 text-zinc-400 hover:text-white bg-black/50 p-2 rounded-full z-10"><X size={18}/></button>
-                <div className="h-32 bg-gradient-to-r from-emerald-900/50 to-purple-900/50 relative">
-                    <div className="absolute -bottom-12 left-6 border-4 border-zinc-900 rounded-2xl overflow-hidden bg-black w-24 h-24 shadow-lg">
-                        <img src={user.avatar} className="w-full h-full object-cover" />
-                    </div>
-                </div>
-                <div className="pt-14 px-6 pb-8">
-                    <div className="mb-4">
-                        <h3 className="text-2xl font-black text-white leading-none">{user.displayName}</h3>
-                        <p className="text-emerald-500 font-mono text-xs mt-1 flex items-center gap-1">
-                            <Hash size={12}/> {user.username} (ORIGINAL ID)
-                        </p>
-                    </div>
-                    <div className="space-y-3">
-                        <div className="bg-black/30 p-3 rounded-xl border border-zinc-800">
-                            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest block mb-1">Clearance</span>
-                            <span className="text-white text-sm font-bold capitalize">{user.role}</span>
-                        </div>
-                        <div className="bg-black/30 p-3 rounded-xl border border-zinc-800">
-                            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest block mb-1">Status Report</span>
-                            <p className="text-zinc-300 text-sm leading-relaxed italic">"{user.bio || 'No status reported.'}"</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
 };
 
 const SwipeableMessage = ({ msg, isMe, onTriggerOptions, activeReactionId, setActiveReactionId, toggleReaction, setReplyTo, users, onShowProfile }) => {
@@ -376,7 +377,7 @@ const SwipeableMessage = ({ msg, isMe, onTriggerOptions, activeReactionId, setAc
   );
 };
 
-const GlobalChat = ({ currentUser, users, onClose }) => {
+const GlobalChat = ({ currentUser, users, onClose, onShowProfile }) => {
   const [msgText, setMsgText] = useState('');
   const [messages, setMessages] = useState([]);
   const [savedStickers, setSavedStickers] = useState([]);
@@ -486,7 +487,7 @@ const GlobalChat = ({ currentUser, users, onClose }) => {
                 setReplyTo={setReplyTo} 
                 setActiveReactionId={setActiveReactionId}
                 users={users}
-                onShowProfile={(uid) => setViewingProfileId(uid)}
+                onShowProfile={onShowProfile}
                />
            ))}
            {isSending && <div className="flex justify-center"><Loader2 size={16} className="text-emerald-500 animate-spin"/></div>}
@@ -634,8 +635,54 @@ const PollWidget = ({ poll, currentUser, logActivity }) => {
   );
 };
 
+const AvatarSelector = ({ currentAvatar, onSelect }) => {
+  const [style, setStyle] = useState('avataaars');
+  const [seed, setSeed] = useState(Math.random().toString(36).substring(7));
+  const previews = useMemo(() => Array.from({ length: 6 }).map((_, i) => ({ id: i, url: `https://api.dicebear.com/9.x/${style}/svg?seed=${seed}-${i}` })), [style, seed]);
+  return (
+    <div className="bg-black/30 p-6 rounded-2xl border border-zinc-700/50 mt-6 animate-in fade-in slide-in-from-top-4">
+      <div className="flex justify-between items-center mb-6"><h4 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider"><Smile size={16} className="text-purple-500"/> Identity Module</h4><button onClick={() => setSeed(Math.random().toString(36))} className="text-xs text-zinc-500 hover:text-white flex items-center gap-1 transition"><RefreshCw size={12} /> REROLL</button></div>
+      <div className="flex gap-2 overflow-x-auto pb-4 mb-2 custom-scrollbar">{AVATAR_STYLES.map(s => <button key={s.id} onClick={() => setStyle(s.id)} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap ${style === s.id ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>{s.name}</button>)}</div>
+      <div className="grid grid-cols-3 gap-4">{previews.map((item) => (<button key={item.id} onClick={() => onSelect(item.url)} className="aspect-square rounded-xl bg-white border-2 border-transparent hover:border-purple-500 overflow-hidden relative group transition-all shadow-lg hover:shadow-purple-500/20"><img src={item.url} className="w-full h-full object-cover" loading="lazy" />{currentAvatar === item.url && <div className="absolute inset-0 bg-purple-600/50 flex items-center justify-center backdrop-blur-sm animate-in zoom-in"><CheckCircle className="text-white w-8 h-8" /></div>}</button>))}</div>
+    </div>
+  );
+};
+
+const ProfileSettings = ({currentUser, logActivity, setSuccessMessage}) => {
+  const [data, setData] = useState(currentUser || { displayName: '', bio: '', avatar: '' });
+  const [showAv, setShowAv] = useState(false);
+
+  useEffect(() => { if (currentUser) setData(currentUser); }, [currentUser]);
+
+  const save = async (e) => { 
+    e.preventDefault(); 
+    await updateDoc(doc(db, COLLECTION_USERS, currentUser.uid), { displayName: data.displayName, bio: data.bio || '', avatar: data.avatar }); 
+    logActivity(`Updated profile`); 
+    setSuccessMessage("IDENTITY UPDATED");
+    setTimeout(() => setSuccessMessage(""), 2000);
+    setShowAv(false); 
+  };
+
+  if (!data) return <div className="text-zinc-500">Loading profile...</div>;
+
+  return (
+    <div className="max-w-2xl mx-auto bg-zinc-900 p-10 rounded-3xl border border-zinc-800">
+       <div className="flex items-center gap-6 mb-8">
+           <div className="w-24 h-24 rounded-2xl bg-white border-4 border-zinc-800 overflow-hidden shadow-2xl relative"><img src={data.avatar} className="w-full h-full object-cover"/></div>
+           <div><h3 className="text-white font-bold text-xl">{data.displayName}</h3><button onClick={()=>setShowAv(!showAv)} className="text-purple-400 text-xs font-bold uppercase tracking-wider hover:text-white mt-2">Change Appearance</button></div>
+       </div>
+       {showAv && <AvatarSelector currentAvatar={data.avatar} onSelect={(url) => { setData({...data, avatar: url}); setShowAv(false); }} />}
+       <form onSubmit={save} className="space-y-6 mt-6">
+         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Codename</label><input value={data.displayName || ''} onChange={e=>setData({...data, displayName:e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none"/></div>
+         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Bio / Status</label><textarea value={data.bio || ''} onChange={e=>setData({...data, bio:e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-white focus:border-purple-500 outline-none h-32 resize-none"/></div>
+         <button className="bg-white text-black px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-purple-50 transition w-full">Save Identity</button>
+       </form>
+    </div>
+  );
+};
+
 // PROJECT TRACKER
-const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, setSuccessMessage }) => {
+const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, setSuccessMessage, navigatedProject, resetNavigatedProject }) => {
   const [view, setView] = useState('list'); 
   const [selectedProject, setSelectedProject] = useState(null);
   const [newProj, setNewProj] = useState({ title: '', type: 'Production', startDate: '', endDate: '', callTime: '', callLocation: '', assignments: {} });
@@ -657,6 +704,15 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
   // Call sheet upload
   const callSheetInputRef = useRef(null);
   const [callSheetLink, setCallSheetLink] = useState('');
+
+  // Handle direct navigation from dashboard
+  useEffect(() => {
+      if (navigatedProject) {
+          setSelectedProject(navigatedProject);
+          setView('details');
+          resetNavigatedProject();
+      }
+  }, [navigatedProject, resetNavigatedProject]);
 
   useEffect(() => {
       if (view === 'create') {
@@ -817,35 +873,39 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {crewList.map((member, idx) => (
-                      <div key={member.id} className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 flex items-center gap-2 group">
-                          <div className="w-1/3 relative">
-                              {editingRoleIndex === idx ? (
-                                  <input 
-                                      autoFocus
-                                      className="w-full bg-black border border-emerald-500 text-emerald-400 text-[10px] font-black uppercase p-1 rounded outline-none"
-                                      value={member.roleName}
-                                      onChange={(e) => updateCrewMember(idx, 'roleName', e.target.value)}
-                                      onBlur={() => setEditingRoleIndex(null)}
-                                      onKeyDown={(e) => e.key === 'Enter' && setEditingRoleIndex(null)}
-                                  />
-                              ) : (
-                                  <div className="flex items-center gap-2 group-hover:text-white transition cursor-pointer" onClick={() => setEditingRoleIndex(idx)}>
-                                      <span className="text-[10px] font-black uppercase text-zinc-500 truncate">{member.roleName}</span>
-                                      <Edit2 size={10} className="text-zinc-600 opacity-0 group-hover:opacity-100 transition"/>
-                                  </div>
-                              )}
+                      <div key={member.id} className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 flex flex-col gap-2 group relative hover:border-zinc-600 transition">
+                          
+                          {/* Role Name Row */}
+                          <div className="flex justify-between items-center border-b border-zinc-800/50 pb-2 mb-1">
+                              <div className="flex-1 relative">
+                                  {editingRoleIndex === idx ? (
+                                      <input 
+                                          autoFocus
+                                          className="w-full bg-black border border-emerald-500 text-emerald-400 text-[10px] font-black uppercase p-1 rounded outline-none"
+                                          value={member.roleName}
+                                          onChange={(e) => updateCrewMember(idx, 'roleName', e.target.value)}
+                                          onBlur={() => setEditingRoleIndex(null)}
+                                          onKeyDown={(e) => e.key === 'Enter' && setEditingRoleIndex(null)}
+                                      />
+                                  ) : (
+                                      <div className="flex items-center gap-2 group-hover:text-white transition cursor-pointer" onClick={() => setEditingRoleIndex(idx)}>
+                                          <span className="text-[10px] font-black uppercase text-zinc-500 truncate">{member.roleName}</span>
+                                          <Edit2 size={10} className="text-zinc-600 opacity-0 group-hover:opacity-100 transition"/>
+                                      </div>
+                                  )}
+                              </div>
+                              <button type="button" onClick={() => removeRole(idx)} className="text-zinc-600 hover:text-red-500 p-1"><X size={12}/></button>
                           </div>
 
+                          {/* User Selection Row */}
                           <select 
-                              className="flex-1 bg-black border border-zinc-800 rounded-lg p-2 text-xs text-white outline-none focus:border-zinc-600"
+                              className="w-full bg-black border border-zinc-800 rounded-lg p-2 text-xs text-white outline-none focus:border-zinc-600"
                               value={member.userId}
                               onChange={(e) => updateCrewMember(idx, 'userId', e.target.value)}
                           >
                               <option value="">-- Unassigned --</option>
                               {users.map(u => <option key={u.uid} value={u.uid}>{u.displayName} (@{u.username})</option>)}
                           </select>
-
-                          <button type="button" onClick={() => removeRole(idx)} className="text-zinc-600 hover:text-red-500 p-1"><X size={14}/></button>
                       </div>
                   ))}
               </div>
@@ -1000,6 +1060,13 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
        <div className="flex justify-between items-center"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Briefcase className="text-amber-500"/> MISSION LOG</h2>{isAdmin && <button onClick={()=>setView('create')} className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition flex items-center gap-2"><Plus size={16}/> New Op</button>}</div>
        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">{projects.map(p => { const progress = calculateProgress(p.startDate, p.endDate); return (<div key={p.id} onClick={() => { setSelectedProject(p); setView('details'); }} className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800 hover:border-zinc-600 transition cursor-pointer group relative overflow-hidden"><div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition"><Film size={100} /></div><div className="relative z-10"><div className="flex justify-between mb-4"><span className="text-[10px] font-black uppercase px-2 py-1 rounded bg-purple-900/30 text-purple-400">{p.type}</span><span className="text-zinc-500 text-xs font-mono">{progress}% Timeline</span></div><h3 className="text-2xl font-bold text-white mb-2">{p.title}</h3><div className="flex items-center gap-4 text-zinc-400 text-xs font-mono mb-6"><span className="flex items-center gap-1"><CalendarDays size={12}/> {p.startDate}</span><span className="flex items-center gap-1"><MapPin size={12}/> {p.callLocation}</span></div><div className="w-full bg-black h-2 rounded-full overflow-hidden"><div className="h-full transition-all duration-500 bg-purple-500" style={{width: `${progress}%`}}></div></div></div></div>)})}</div>
     </div>
+  );
+};
+
+const TeamManager = ({ users, currentUser, logActivity, onShowProfile }) => {
+  const handleDelete = async (user) => { if(confirm(`Remove ${user.displayName}?`)) { await deleteDoc(doc(db, COLLECTION_USERS, user.uid)); logActivity(`Removed user: ${user.displayName}`); }};
+  return (
+    <div className="max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black text-white flex items-center gap-3"><Users className="text-amber-500" /> CLAN ROSTER</h2><span className="text-xs text-zinc-500 bg-zinc-900 px-4 py-2 rounded-full border border-zinc-800 font-bold uppercase tracking-widest">Active: {users.length}</span></div><div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">{users.map(u => (<div key={u.uid} className="bg-zinc-900/50 p-6 rounded-3xl border border-zinc-800 hover:border-purple-500/30 transition group flex flex-col items-center text-center gap-4 relative"><div className="w-20 h-20 rounded-full bg-black border-2 border-zinc-700 overflow-hidden group-hover:scale-110 transition shadow-xl cursor-pointer" onClick={() => onShowProfile(u.uid)}><img src={u.avatar || `https://api.dicebear.com/9.x/avataaars/svg?seed=${u.uid}`} className="w-full h-full object-cover"/></div><div><p className="text-white font-black text-lg flex items-center justify-center gap-2 cursor-pointer hover:text-emerald-400 transition" onClick={() => onShowProfile(u.uid)}>{u.displayName || 'Unknown Agent'}{u.uid === currentUser.uid && <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded">YOU</span>}</p><p className="text-xs text-purple-400 font-mono mt-1 uppercase tracking-widest">{u.role || 'N/A'}</p><p className="text-xs text-zinc-600 mt-2">@{u.username || '---'}</p></div>{currentUser.role === 'admin' && u.uid !== currentUser.uid && (<button onClick={() => handleDelete(u)} className="mt-2 p-2 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition w-full flex justify-center"><Trash2 size={16} /></button>)}</div>))}</div></div>
   );
 };
 
@@ -1315,6 +1382,9 @@ const App = () => {
   const [announcements, setAnnouncements] = useState([]);
   const [hiddenProjectIds, setHiddenProjectIds] = useState([]);
   const [showHidden, setShowHidden] = useState(false); // Toggle to show hidden projects
+  
+  const [viewingProfileId, setViewingProfileId] = useState(null); // Global Profile Viewer
+  const [navigatedProject, setNavigatedProject] = useState(null); // For redirection
 
   // Auth & Init
   useEffect(() => {
@@ -1377,6 +1447,11 @@ const App = () => {
       }
       setHiddenProjectIds(newHidden);
       localStorage.setItem('clan_yujo_hidden_projects', JSON.stringify(newHidden));
+  };
+
+  const handleOpenProject = (project) => {
+      setNavigatedProject(project);
+      setActiveTab('projects');
   };
 
   // TOGGLE PRODUCTION (ADMIN ONLY)
@@ -1465,7 +1540,7 @@ const App = () => {
                                 const isMyMission = myRoles.length > 0;
 
                                 return (
-                                    <div key={p.id} onClick={() => { setSelectedProject(p); setActiveTab('projects'); }} className={`p-4 rounded-xl border transition cursor-pointer group relative ${isMyMission ? 'bg-zinc-950/90 border-emerald-500/50 hover:border-emerald-400' : (isHidden ? 'bg-zinc-900/30 border-dashed border-zinc-800 opacity-60 hover:opacity-100' : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700')}`}>
+                                    <div key={p.id} onClick={() => handleOpenProject(p)} className={`p-4 rounded-xl border transition cursor-pointer group relative ${isMyMission ? 'bg-zinc-950/90 border-emerald-500/50 hover:border-emerald-400' : (isHidden ? 'bg-zinc-900/30 border-dashed border-zinc-800 opacity-60 hover:opacity-100' : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700')}`}>
                                         <div className="flex justify-between items-start">
                                             <h4 className={`font-bold text-lg mb-1 truncate pr-6 ${isHidden ? 'text-zinc-500' : 'text-white'}`}>{p.title}</h4>
                                             <button onClick={(e) => toggleHideProject(e, p.id)} className="text-zinc-600 hover:text-white p-1 rounded-full absolute top-2 right-2">
@@ -1527,8 +1602,8 @@ const App = () => {
             </div>
           )}
           {activeTab === 'bookings' && currentUser.role !== 'temp' && <BookingSystem currentUser={currentUser} bookings={bookings} users={users} requests={requests} logActivity={logActivity} productionStatus={productionStatus} />}
-          {activeTab === 'projects' && <ProjectTracker projects={projects} users={users} isAdmin={currentUser.role==='admin'} logActivity={logActivity} currentUser={currentUser} />}
-          {activeTab === 'team' && currentUser.role !== 'temp' && <TeamManager users={users} currentUser={currentUser} logActivity={logActivity} />}
+          {activeTab === 'projects' && <ProjectTracker projects={projects} users={users} isAdmin={currentUser.role==='admin'} logActivity={logActivity} currentUser={currentUser} navigatedProject={navigatedProject} resetNavigatedProject={() => setNavigatedProject(null)} />}
+          {activeTab === 'team' && currentUser.role !== 'temp' && <TeamManager users={users} currentUser={currentUser} logActivity={logActivity} onShowProfile={setViewingProfileId} />}
           {activeTab === 'profile' && <ProfileSettings currentUser={currentUser} logActivity={logActivity} setSuccessMessage={setSuccessMessage} />}
           {activeTab === 'cinema_admin' && currentUser.role === 'admin' && <MovieNightAdmin logActivity={logActivity} />}
         </div>
@@ -1540,7 +1615,9 @@ const App = () => {
              </div>
         )}
         <NexusMenu isOpen={isNexusOpen} toggle={() => setIsNexusOpen(!isNexusOpen)} setActiveTab={setActiveTab} handleLogout={handleLogout} role={currentUser.role} openChat={() => setShowChat(true)} hasUnread={hasUnread} />
-        {showChat && <GlobalChat currentUser={currentUser} users={users} onClose={() => setShowChat(false)} />}
+        {showChat && <GlobalChat currentUser={currentUser} users={users} onClose={() => setShowChat(false)} onShowProfile={setViewingProfileId} />}
+        {/* GLOBAL PROFILE VIEWER OVERLAY */}
+        {viewingProfileId && <AgentDossier userId={viewingProfileId} users={users} onClose={() => setViewingProfileId(null)} />}
       </main>
     </div>
   );
