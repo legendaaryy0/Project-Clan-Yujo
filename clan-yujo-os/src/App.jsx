@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { createRoot } from 'react-dom/client';
 import { 
   Calendar, Clock, Users, Video, MonitorPlay, Mic2, Bell, LogOut, Plus, 
   CheckCircle, AlertCircle, Film, LayoutDashboard, Settings, MessageSquare, 
@@ -10,7 +9,7 @@ import {
   Layers, Briefcase, MapPin, CalendarDays, CheckSquare, Flag, ArrowLeft, 
   AlertTriangle, MessageSquareCode, Minimize2, Command, Megaphone, HardDrive,
   Sticker, CornerDownRight, Loader2, Reply, Power, Cpu, BookOpen, Factory,
-  Unlock, Hash, Edit2, UserPlus, FileText, Eye, EyeOff, ExternalLink, Briefcase as WorkIcon, GraduationCap, Building2
+  Unlock, Hash, Edit2, UserPlus, FileText, Eye, EyeOff, ExternalLink, Briefcase as WorkIcon, GraduationCap, Building2, Download
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -19,7 +18,7 @@ import {
   orderBy, updateDoc, deleteDoc, limit, serverTimestamp, where, getDocs, getDoc 
 } from 'firebase/firestore';
 
-// --- 1. FIREBASE CONFIGURATION ---
+// --- 1. FIREBASE CONFIGURATION (LOCKED) ---
 const firebaseConfig = {
   apiKey: "AIzaSyBZUDfgKkoXIJtC8H2cef8dzhHJlhNvrYE",
   authDomain: "clan-yujo.firebaseapp.com",
@@ -758,13 +757,22 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
 
       // Open Modal
       setBookingModal({ resource, dateStr: selectedDate });
-      setBookingPurpose('Learning');
-      setBookingDesc('');
+      
+      // Default to "Study" for library, "Learning" for others
+      const isLibrary = resource.type === 'Barracks';
+      setBookingPurpose(isLibrary ? 'Study/Research' : 'Learning');
+      setBookingDesc(isLibrary ? 'Library Usage' : '');
   };
 
   const confirmBooking = async (e) => {
       e.preventDefault();
       if (!bookingModal) return;
+
+      const isLibrary = bookingModal.resource.type === 'Barracks';
+      
+      // If library, force default values if empty to avoid submission errors
+      const finalPurpose = isLibrary ? 'Study/Research' : bookingPurpose;
+      const finalDesc = isLibrary ? 'Library Usage' : bookingDesc;
 
       await addDoc(collection(db, COLLECTION_BOOKINGS), { 
           resourceId: bookingModal.resource.id, 
@@ -774,11 +782,11 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
           startTime: serverTimestamp(), 
           status: 'active', 
           dateStr: bookingModal.dateStr,
-          purpose: bookingPurpose,
-          description: bookingDesc
+          purpose: finalPurpose,
+          description: finalDesc
       }); 
       
-      logActivity(`Booked ${bookingModal.resource.name} for ${bookingPurpose}`);
+      logActivity(`Booked ${bookingModal.resource.name}`);
       setBookingModal(null);
   };
 
@@ -817,6 +825,9 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
       await updateDoc(doc(db, COLLECTION_REQUESTS, req.id), { status: 'approved' });
       logActivity(`Ray granted access to ${req.requesterName}`);
   };
+  
+  // Helper to check resource type
+  const isLibraryBooking = bookingModal && bookingModal.resource.type === 'Barracks';
 
   return (
     <div className="space-y-8 relative">
@@ -940,35 +951,48 @@ const BookingSystem = ({ currentUser, bookings, users, requests, logActivity, pr
                   <p className="text-zinc-500 text-xs font-mono mb-6">{bookingModal.resource.name} // {bookingModal.dateStr}</p>
                   
                   <form onSubmit={confirmBooking} className="space-y-4">
-                      <div>
-                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Operation Type</label>
-                          <div className="grid grid-cols-3 gap-2">
-                              {['Learning', 'Paid Work', 'Office Production'].map(type => (
-                                  <button 
-                                      type="button" 
-                                      key={type}
-                                      onClick={() => setBookingPurpose(type)} 
-                                      className={`p-2 rounded-xl text-[10px] font-bold uppercase transition border ${bookingPurpose === type ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
-                                  >
-                                      {type === 'Learning' && <GraduationCap size={14} className="mx-auto mb-1"/>}
-                                      {type === 'Paid Work' && <WorkIcon size={14} className="mx-auto mb-1"/>}
-                                      {type === 'Office Production' && <Building2 size={14} className="mx-auto mb-1"/>}
-                                      {type}
-                                  </button>
-                              ))}
+                      {/* Only show inputs if NOT library */}
+                      {!isLibraryBooking && (
+                          <>
+                          <div>
+                              <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Operation Type</label>
+                              <div className="grid grid-cols-3 gap-2">
+                                  {['Learning', 'Paid Work', 'Office Production'].map(type => (
+                                      <button 
+                                          type="button" 
+                                          key={type}
+                                          onClick={() => setBookingPurpose(type)} 
+                                          className={`p-2 rounded-xl text-[10px] font-bold uppercase transition border ${bookingPurpose === type ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
+                                      >
+                                          {type === 'Learning' && <GraduationCap size={14} className="mx-auto mb-1"/>}
+                                          {type === 'Paid Work' && <WorkIcon size={14} className="mx-auto mb-1"/>}
+                                          {type === 'Office Production' && <Building2 size={14} className="mx-auto mb-1"/>}
+                                          {type}
+                                      </button>
+                                  ))}
+                              </div>
                           </div>
-                      </div>
+                          
+                          <div>
+                              <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Intel / Description</label>
+                              <textarea 
+                                  className="w-full bg-black border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-emerald-500 outline-none h-24 resize-none placeholder:text-zinc-700" 
+                                  placeholder="Describe your task (e.g. Rendering Scene 04, Learning Blender nodes...)"
+                                  value={bookingDesc}
+                                  onChange={(e) => setBookingDesc(e.target.value)}
+                                  required
+                              />
+                          </div>
+                          </>
+                      )}
                       
-                      <div>
-                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Intel / Description</label>
-                          <textarea 
-                              className="w-full bg-black border border-zinc-700 rounded-xl p-3 text-sm text-white focus:border-emerald-500 outline-none h-24 resize-none placeholder:text-zinc-700" 
-                              placeholder="Describe your task (e.g. Rendering Scene 04, Learning Blender nodes...)"
-                              value={bookingDesc}
-                              onChange={(e) => setBookingDesc(e.target.value)}
-                              required
-                          />
-                      </div>
+                      {isLibraryBooking && (
+                          <div className="bg-emerald-900/20 border border-emerald-500/20 p-4 rounded-xl text-center">
+                              <BookOpen size={24} className="text-emerald-500 mx-auto mb-2"/>
+                              <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest">Library Access Granted</p>
+                              <p className="text-zinc-500 text-[10px] mt-1">Quiet zone protocols active.</p>
+                          </div>
+                      )}
 
                       <button className="w-full bg-white text-black font-black py-4 rounded-xl uppercase tracking-widest hover:bg-emerald-400 transition">Confirm Booking</button>
                   </form>
@@ -1002,6 +1026,8 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
   // Call sheet upload
   const callSheetInputRef = useRef(null);
   const [callSheetLink, setCallSheetLink] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState('');
 
   // Handle direct navigation from dashboard
   useEffect(() => {
@@ -1023,6 +1049,16 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
           setCrewList(initialCrew);
       }
   }, [projForm.type, view]);
+
+  // Keep selectedProject in sync with live data from Firestore
+  useEffect(() => {
+      if (selectedProject) {
+          const liveVersion = projects.find(p => p.id === selectedProject.id);
+          if (liveVersion) {
+              setSelectedProject(liveVersion);
+          }
+      }
+  }, [projects]); 
 
   useEffect(() => {
       if (view === 'edit' && selectedProject) {
@@ -1095,12 +1131,17 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
   const handleCallSheetUpload = (e) => {
       const file = e.target.files[0];
       if (file) {
+          setIsUploading(true);
+          setUploadMsg("UPLOADING...");
           const reader = new FileReader();
           reader.onloadend = async () => {
               const newSheet = { id: Date.now(), name: file.name, type: 'file', url: reader.result, uploadedBy: currentUser.displayName, date: new Date().toISOString() };
               const updatedSheets = [...(selectedProject.callSheets || []), newSheet];
               await updateDoc(doc(db, COLLECTION_PROJECTS, selectedProject.id), { callSheets: updatedSheets });
               logActivity(`Uploaded Call Sheet: ${file.name}`);
+              setIsUploading(false);
+              setUploadMsg("UPLOAD COMPLETE");
+              setTimeout(() => setUploadMsg(""), 3000);
           };
           reader.readAsDataURL(file);
       }
@@ -1115,9 +1156,12 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
       logActivity(`Linked Call Sheet`);
   };
 
-  const handleDeleteCallSheet = async (sheetId) => {
+  const handleDeleteCallSheet = async (e, sheetId) => {
+      e.preventDefault(); 
+      e.stopPropagation(); // Stop event from bubbling to parent link
       const updatedSheets = (selectedProject.callSheets || []).filter(s => s.id !== sheetId);
       await updateDoc(doc(db, COLLECTION_PROJECTS, selectedProject.id), { callSheets: updatedSheets });
+      // The useEffect above will handle the UI update once Firestore responds
   };
 
   const updateCrewMember = (idx, field, value) => {
@@ -1253,31 +1297,27 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
               <div className="lg:col-span-2 space-y-8">
                   {/* CALL SHEET MODULE */}
                   <div className="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800">
-                      <h3 className="text-white font-bold flex items-center gap-2 mb-4"><FileText className="text-amber-500"/> Tactical Call Sheet</h3>
+                      <div className="flex justify-between items-center mb-4">
+                          <h3 className="text-white font-bold flex items-center gap-2"><FileText className="text-amber-500"/> Tactical Call Sheet</h3>
+                          {uploadMsg && <span className="text-[10px] font-bold text-emerald-500 animate-pulse">{uploadMsg}</span>}
+                      </div>
                       
                       {selectedProject.callSheets && selectedProject.callSheets.length > 0 ? (
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                               {selectedProject.callSheets.map((sheet) => (
                                   <div key={sheet.id} className="bg-black/40 border border-zinc-800 rounded-xl p-3 relative group">
-                                      {sheet.type === 'link' ? (
-                                          <a href={sheet.url} target="_blank" rel="noreferrer" className="block text-center hover:opacity-80 transition">
-                                              <ExternalLink size={24} className="text-blue-400 mx-auto mb-2"/>
-                                              <p className="text-[10px] text-white font-bold truncate">{sheet.name}</p>
-                                          </a>
-                                      ) : (
-                                          <div className="text-center">
-                                              {/* Simple heuristic: if it starts with data:image, show preview, else show icon */}
-                                              {sheet.url.startsWith('data:image') ? (
-                                                  <img src={sheet.url} className="w-full h-20 object-cover rounded-lg mb-2 border border-zinc-800" />
-                                              ) : (
-                                                  <FileText size={24} className="text-zinc-400 mx-auto mb-2"/>
-                                              )}
-                                              <p className="text-[10px] text-white font-bold truncate">{sheet.name}</p>
-                                          </div>
-                                      )}
+                                      <a href={sheet.url} download={sheet.name} target="_blank" rel="noreferrer" className="block text-center hover:opacity-80 transition cursor-pointer">
+                                          {sheet.url.startsWith('data:image') ? (
+                                              <img src={sheet.url} className="w-full h-20 object-cover rounded-lg mb-2 border border-zinc-800" />
+                                          ) : (
+                                              <FileText size={24} className="text-zinc-400 mx-auto mb-2"/>
+                                          )}
+                                          <p className="text-[10px] text-white font-bold truncate">{sheet.name}</p>
+                                          <div className="flex justify-center mt-1"><Download size={10} className="text-zinc-500"/></div>
+                                      </a>
                                       <div className="text-[9px] text-zinc-500 text-center mt-1">{new Date(sheet.date).toLocaleDateString()}</div>
                                       {isAdmin && (
-                                          <button onClick={() => handleDeleteCallSheet(sheet.id)} className="absolute top-1 right-1 bg-red-900/80 text-red-200 p-1 rounded-full opacity-0 group-hover:opacity-100 transition"><X size={10}/></button>
+                                          <button onClick={(e) => handleDeleteCallSheet(e, sheet.id)} className="absolute top-1 right-1 bg-red-900/80 text-red-200 p-1 rounded-full opacity-0 group-hover:opacity-100 transition z-10"><X size={10}/></button>
                                       )}
                                   </div>
                               ))}
@@ -1289,7 +1329,9 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
                       {isAdmin && (
                           <div className="flex flex-col gap-2 border-t border-zinc-800 pt-4">
                               <div className="flex gap-2">
-                                  <button onClick={() => callSheetInputRef.current.click()} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><Upload size={14}/> Upload File / Img</button>
+                                  <button onClick={() => callSheetInputRef.current.click()} disabled={isUploading} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                                      {isUploading ? <Loader2 size={14} className="animate-spin"/> : <Upload size={14}/>} Upload File / Img
+                                  </button>
                                   <input type="file" ref={callSheetInputRef} className="hidden" onChange={handleCallSheetUpload} />
                               </div>
                               <div className="flex gap-2 bg-black/40 p-2 rounded-xl border border-zinc-800">
@@ -1361,8 +1403,11 @@ const ProjectTracker = ({ projects, users, isAdmin, logActivity, currentUser, se
   );
 };
 
-// --- MAIN APP ---
+// --- MAIN APP --- (Defined at the end)
 const App = () => {
+    // ... (rest of App component code)
+    // I am including the full App component below for completeness
+    
   const [currentUser, setCurrentUser] = useState(null); 
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -1370,7 +1415,7 @@ const App = () => {
   const [showChat, setShowChat] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const [productionStatus, setProductionStatus] = useState(false); // Global Production Switch
+  const [productionStatus, setProductionStatus] = useState(false); 
   
   const [bookings, setBookings] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -1381,12 +1426,11 @@ const App = () => {
   const [polls, setPolls] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [hiddenProjectIds, setHiddenProjectIds] = useState([]);
-  const [showHidden, setShowHidden] = useState(false); // Toggle to show hidden projects
+  const [showHidden, setShowHidden] = useState(false); 
   
-  const [viewingProfileId, setViewingProfileId] = useState(null); // Global Profile Viewer
-  const [navigatedProject, setNavigatedProject] = useState(null); // For redirection
+  const [viewingProfileId, setViewingProfileId] = useState(null); 
+  const [navigatedProject, setNavigatedProject] = useState(null); 
 
-  // Auth & Init
   useEffect(() => {
     const initAuth = async () => {
         const storedUid = localStorage.getItem('clan_yujo_uid');
@@ -1401,16 +1445,13 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // Notifications
   useEffect(() => { if (currentUser && "Notification" in window && Notification.permission !== "granted") Notification.requestPermission(); }, [currentUser]);
 
-  // Load hidden preferences
   useEffect(() => {
       const hidden = localStorage.getItem('clan_yujo_hidden_projects');
       if (hidden) setHiddenProjectIds(JSON.parse(hidden));
   }, []);
 
-  // Data Streams
   useEffect(() => {
     if (!currentUser) return;
     const unsubMe = onSnapshot(doc(db, COLLECTION_USERS, currentUser.uid), (d) => { if (d.exists()) setCurrentUser(d.data()); });
@@ -1424,7 +1465,6 @@ const App = () => {
     const u8 = onSnapshot(collection(db, COLLECTION_MESSAGES), (snap) => { if (!showChat && snap.docChanges().some(change => change.type === 'added')) { setHasUnread(true); const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg"); audio.volume = 0.1; audio.play().catch(() => {}); } });
     const u9 = onSnapshot(query(collection(db, COLLECTION_ANNOUNCEMENTS), orderBy('createdAt', 'desc'), limit(1)), (s) => setAnnouncements(s.docs.map(d => ({id: d.id, ...d.data()}))));
     
-    // PRODUCTION STATUS LISTENER (NEW)
     const u10 = onSnapshot(doc(db, COLLECTION_SYSTEM, 'config'), (doc) => {
         if (doc.exists()) { setProductionStatus(doc.data().productionLive); }
     });
@@ -1454,7 +1494,6 @@ const App = () => {
       setActiveTab('projects');
   };
 
-  // TOGGLE PRODUCTION (ADMIN ONLY)
   const toggleProduction = async () => {
       const newStatus = !productionStatus;
       await setDoc(doc(db, COLLECTION_SYSTEM, 'config'), { productionLive: newStatus }, { merge: true });
@@ -1464,11 +1503,10 @@ const App = () => {
   if (!isAuthReady) return <div className="min-h-screen bg-black flex flex-col items-center justify-center text-zinc-600 font-mono"><RefreshCw size={48} className="animate-spin text-purple-600 mb-6"/><p className="text-sm tracking-[0.3em] uppercase">CLAN YUJO // INITIALIZING</p></div>;
   if (!currentUser) return <LoginScreen onLogin={handleManualLogin} isAuthReady={isAuthReady} />;
 
-  // Display projects logic: If showHidden is true, show hidden ones too.
   const dashboardProjects = projects.filter(p => {
       const isHidden = hiddenProjectIds.includes(p.id);
-      if (showHidden) return true; // Show all if toggle is on
-      return !isHidden; // Otherwise only show unhidden
+      if (showHidden) return true; 
+      return !isHidden; 
   });
 
   return (
@@ -1584,7 +1622,6 @@ const App = () => {
                           </div>
                       </div>
                       <div className="space-y-4">
-                          {/* PRODUCTION TOGGLE - ADMIN ONLY */}
                           {currentUser.role === 'admin' && (
                               <div className="bg-black/60 p-4 rounded-2xl border border-zinc-800 flex justify-between items-center group hover:border-purple-500/30 transition">
                                   <div className="flex items-center gap-3"><Power size={18} className="text-zinc-500 group-hover:text-purple-400"/><span className="text-zinc-400 text-sm font-bold">MASTER SWITCH</span></div>
