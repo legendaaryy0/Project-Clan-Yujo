@@ -169,6 +169,7 @@ const NexusMenu = ({ isOpen, toggle, setActiveTab, handleLogout, role, openChat,
     <div ref={menuRef} className="fixed bottom-24 left-1/2 transform -translate-x-1/2 w-[90%] max-w-[250px] z-50 flex flex-col gap-3 animate-in slide-in-from-bottom-5 fade-in duration-200 lg:hidden">
        <div className="bg-zinc-900/95 backdrop-blur-xl border border-zinc-700 rounded-2xl p-2 shadow-2xl flex flex-col gap-1">
           {role !== 'temp' && (<button onClick={() => { openChat(); toggle(); }} className="flex items-center gap-3 text-emerald-400 hover:text-emerald-300 hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold relative"><MessageCircle size={18}/> Clan Comms{hasUnread && <span className="absolute right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}</button>)}
+          {role === 'admin' && (<button onClick={() => { setActiveTab('cinema'); toggle(); }} className="flex items-center gap-3 text-purple-400 hover:text-purple-300 hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold relative"><Ticket size={18}/> Cinema Control</button>)}
           {role !== 'temp' && (<button onClick={() => { setActiveTab('nexus'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Users size={18}/> Nexus Hub</button>)}
           <button onClick={() => { setActiveTab('profile'); toggle(); }} className="flex items-center gap-3 text-zinc-300 hover:text-white hover:bg-white/10 px-4 py-3 rounded-xl transition text-sm font-bold"><Settings size={18}/> My Identity</button>
           <div className="h-px bg-zinc-800 my-1"></div>
@@ -191,6 +192,12 @@ const NexusQuickActions = ({ setActiveTab, openChat, hasUnread, role, handleLogo
                     </button>
                 )}
                 {role !== 'temp' && (
+                    <button onClick={() => setActiveTab('bookings')} className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-amber-500/50 p-4 rounded-xl flex flex-col items-center gap-2 transition group">
+                        <Clock size={20} className="text-amber-500 group-hover:scale-110 transition"/>
+                        <span className="text-[10px] font-bold text-zinc-400 group-hover:text-white uppercase tracking-wider">Armory</span>
+                    </button>
+                )}
+                {role !== 'temp' && (
                     <button onClick={() => setActiveTab('nexus')} className="bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-blue-500/50 p-4 rounded-xl flex flex-col items-center gap-2 transition group">
                         <Hexagon size={20} className="text-blue-500 group-hover:scale-110 transition"/>
                         <span className="text-[10px] font-bold text-zinc-400 group-hover:text-white uppercase tracking-wider">Nexus</span>
@@ -200,7 +207,7 @@ const NexusQuickActions = ({ setActiveTab, openChat, hasUnread, role, handleLogo
                     <Settings size={20} className="text-purple-500 group-hover:scale-110 transition"/>
                     <span className="text-[10px] font-bold text-zinc-400 group-hover:text-white uppercase tracking-wider">Identity</span>
                 </button>
-                <button onClick={handleLogout} className="bg-zinc-950 hover:bg-red-900/20 border border-zinc-800 hover:border-red-500/50 p-4 rounded-xl flex flex-col items-center gap-2 transition group">
+                <button onClick={handleLogout} className="bg-zinc-950 hover:bg-red-900/20 border border-zinc-800 hover:border-red-500/50 p-4 rounded-xl flex flex-col items-center gap-2 transition group col-span-2">
                     <LogOut size={20} className="text-red-500 group-hover:scale-110 transition"/>
                     <span className="text-[10px] font-bold text-zinc-400 group-hover:text-white uppercase tracking-wider">Eject</span>
                 </button>
@@ -898,8 +905,8 @@ const App = () => {
         <nav className="flex-1 py-8 space-y-2 px-4">
           {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Headquarters' },
             { id: 'nexus', icon: Users, label: 'Nexus Hub' },
-            { id: 'cinema', icon: Ticket, label: 'Cinema Control' },
             { id: 'bookings', icon: Clock, label: 'Armory / Labs', restricted: true },
+            { id: 'cinema', icon: Ticket, label: 'Cinema Control' },
             { id: 'projects', icon: Film, label: 'Missions' }
           ].map(item => (
             (!item.restricted || (currentUser.role !== 'temp' && (item.id !== 'cinema' || currentUser.role === 'admin'))) && (
@@ -909,8 +916,10 @@ const App = () => {
         </nav>
       </div>
       <div className="lg:hidden fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm bg-zinc-950/90 backdrop-blur-2xl border border-zinc-800 rounded-full z-40 flex justify-around items-center p-1.5 shadow-2xl shadow-black/50">
-         {[{ id: 'dashboard', label: 'Home', icon: LayoutDashboard },{ id: 'cinema', label: 'Cinema', icon: Ticket }].map(item => (
+         {[{ id: 'dashboard', label: 'Home', icon: LayoutDashboard },{ id: 'bookings', label: 'Armory', icon: Clock, restricted: true }].map(item => (
+            (!item.restricted || currentUser.role !== 'temp') && (
             <button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-3.5 rounded-full transition-all duration-300 relative group ${activeTab === item.id ? 'bg-white text-black shadow-lg scale-110' : 'text-zinc-500 hover:text-white'}`}><item.icon size={20} strokeWidth={2.5} /></button>
+            )
          ))}
          <button onClick={() => setIsNexusOpen(!isNexusOpen)} className="p-4 rounded-full bg-zinc-900 text-white shadow-lg border border-zinc-700 relative transform hover:scale-110 transition active:scale-95"><Hexagon size={24} className="text-purple-500" fill="currentColor" fillOpacity={0.2} />{hasUnread && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-black animate-pulse"></span>}</button>
          {[{ id: 'projects', label: 'Work', icon: Briefcase }, { id: 'nexus', label: 'Clan', icon: Users, restricted: true }].map(item => (
