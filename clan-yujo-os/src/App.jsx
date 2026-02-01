@@ -746,6 +746,9 @@ const App = () => {
   const [deleteConfirmation, setDeleteConfirmation] = useState(null);
   const [pollToDelete, setPollToDelete] = useState(null);
 
+  // Ref to track app load time for notifications
+  const appLoadTime = useRef(new Date());
+
   // ... [useEffect hooks for Auth, Notifications, LocalStorage remain same] ...
   useEffect(() => {
     const initAuth = async () => {
@@ -768,18 +771,127 @@ const App = () => {
       if (hidden) setHiddenProjectIds(JSON.parse(hidden));
   }, []);
 
+  // NOTIFICATION HELPER
+  const sendSystemNotification = (title, body, icon = '/logo.jpeg') => {
+      if (!("Notification" in window)) return;
+      if (Notification.permission === "granted") {
+          try {
+              new Notification(title, { body, icon });
+              const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+              audio.volume = 0.2;
+              audio.play().catch(() => {});
+          } catch (e) {
+              console.error("Notification failed", e);
+          }
+      }
+  };
+
   useEffect(() => {
     if (!currentUser) return;
     const unsubMe = onSnapshot(doc(db, COLLECTION_USERS, currentUser.uid), (d) => { if (d.exists()) setCurrentUser(d.data()); });
+    
+    // 1. BOOKINGS (No Notif needed usually, but good for reference)
     const u1 = onSnapshot(collection(db, COLLECTION_BOOKINGS), (s) => setBookings(s.docs.map(d => ({id: d.id, ...d.data()}))));
-    const u2 = onSnapshot(collection(db, COLLECTION_PROJECTS), (s) => setProjects(s.docs.map(d => ({id: d.id, ...d.data()}))));
+    
+    // 2. PROJECTS (MISSIONS) - Notify on New
+    const u2 = onSnapshot(collection(db, COLLECTION_PROJECTS), (s) => {
+        const projData = s.docs.map(d => ({id: d.id, ...d.data()}));
+        setProjects(projData);
+        
+        // Check for new missions
+        if (!s.metadata.hasPendingWrites && currentUser.notificationPrefs?.system) {
+            s.docChanges().forEach(change => {
+                if (change.type === 'added') {
+                    const data = change.doc.data();
+                    const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+                    if (createdAt > appLoadTime.current) {
+                        sendSystemNotification("New Mission Brief", `Operation: ${data.title}`);
+                    }
+                }
+            });
+        }
+    });
+
     const u3 = onSnapshot(query(collection(db, COLLECTION_LOGS), orderBy('timestamp', 'desc')), (s) => setLogs(s.docs.map(d => ({id: d.id, ...d.data()}))));
     const u4 = onSnapshot(collection(db, COLLECTION_USERS), (s) => setUsers(s.docs.map(d => ({uid: d.id, ...d.data()}))));
     const u5 = onSnapshot(collection(db, COLLECTION_REQUESTS), (s) => setRequests(s.docs.map(d => ({id: d.id, ...d.data()}))));
-    const u6 = onSnapshot(query(collection(db, COLLECTION_SCREENINGS), orderBy('createdAt', 'desc')), (s) => setScreenings(s.docs.map(d => ({id: d.id, ...d.data()}))));
-    const u7 = onSnapshot(query(collection(db, COLLECTION_POLLS), orderBy('createdAt', 'desc'), limit(1)), (s) => setPolls(s.docs.map(d => ({id: d.id, ...d.data()}))));
-    const u8 = onSnapshot(collection(db, COLLECTION_MESSAGES), (snap) => { if (!showChat && snap.docChanges().some(change => change.type === 'added')) { setHasUnread(true); const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg"); audio.volume = 0.1; audio.play().catch(() => {}); } });
-    const u9 = onSnapshot(query(collection(db, COLLECTION_ANNOUNCEMENTS), orderBy('createdAt', 'desc'), limit(1)), (s) => setAnnouncements(s.docs.map(d => ({id: d.id, ...d.data()}))));
+    
+    // 6. SCREENINGS (MOVIES) - Notify on New
+    const u6 = onSnapshot(query(collection(db, COLLECTION_SCREENINGS), orderBy('createdAt', 'desc')), (s) => {
+        const scrData = s.docs.map(d => ({id: d.id, ...d.data()}));
+        setScreenings(scrData);
+
+        if (!s.metadata.hasPendingWrites && currentUser.notificationPrefs?.cinema) {
+            s.docChanges().forEach(change => {
+                if (change.type === 'added') {
+                    const data = change.doc.data();
+                    const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+                    if (createdAt > appLoadTime.current) {
+                        sendSystemNotification("Cinema Update", `Now Showing: ${data.title}`);
+                    }
+                }
+            });
+        }
+    });
+
+    // 7. POLLS - Notify on New
+    const u7 = onSnapshot(query(collection(db, COLLECTION_POLLS), orderBy('createdAt', 'desc'), limit(1)), (s) => {
+        const pollData = s.docs.map(d => ({id: d.id, ...d.data()}));
+        setPolls(pollData);
+
+        if (!s.metadata.hasPendingWrites && currentUser.notificationPrefs?.system) {
+            s.docChanges().forEach(change => {
+                if (change.type === 'added') {
+                    const data = change.doc.data();
+                    const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+                    if (createdAt > appLoadTime.current) {
+                        sendSystemNotification("Voting Open", `New Poll: ${data.question}`);
+                    }
+                }
+            });
+        }
+    });
+
+    // 8. MESSAGES - Notify on New (if not from me)
+    const u8 = onSnapshot(collection(db, COLLECTION_MESSAGES), (snap) => { 
+        if (!showChat && snap.docChanges().some(change => change.type === 'added')) { 
+            setHasUnread(true); 
+            // Only play simple sound if chat is closed, handled by existing logic
+        }
+        
+        // Active Notification Logic
+        if (!snap.metadata.hasPendingWrites && currentUser.notificationPrefs?.messages) {
+             snap.docChanges().forEach(change => {
+                if (change.type === 'added') {
+                    const data = change.doc.data();
+                    const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+                    // Only notify if newer than load time AND not sent by me
+                    if (createdAt > appLoadTime.current && data.uid !== currentUser.uid) {
+                        sendSystemNotification(`New Comm from ${data.displayName}`, data.text || "Sent an image/sticker");
+                    }
+                }
+            });
+        }
+    });
+
+    // 9. ANNOUNCEMENTS - Notify on New
+    const u9 = onSnapshot(query(collection(db, COLLECTION_ANNOUNCEMENTS), orderBy('createdAt', 'desc'), limit(1)), (s) => {
+        const annData = s.docs.map(d => ({id: d.id, ...d.data()}));
+        setAnnouncements(annData);
+
+        if (!s.metadata.hasPendingWrites && currentUser.notificationPrefs?.announcements) {
+            s.docChanges().forEach(change => {
+                if (change.type === 'added') {
+                    const data = change.doc.data();
+                    const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+                    if (createdAt > appLoadTime.current) {
+                        sendSystemNotification("HQ Broadcast", data.text);
+                    }
+                }
+            });
+        }
+    });
+
     const u11 = onSnapshot(query(collection(db, COLLECTION_MOVIE_POOL), orderBy('createdAt', 'desc')), (s) => setMoviePool(s.docs.map(d => ({id: d.id, ...d.data()}))));
 
     const u10 = onSnapshot(doc(db, COLLECTION_SYSTEM, 'config'), (doc) => {
@@ -934,7 +1046,19 @@ const App = () => {
         <div className="relative z-20 max-w-7xl mx-auto">
           <div className="lg:hidden flex items-center justify-between mb-8 mt-2">
               <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center rotate-3 overflow-hidden shadow-lg">{LOGO_URL ? <img src={LOGO_URL} className="w-full h-full object-cover" /> : <Hexagon className="text-black w-6 h-6" />}</div><span className="font-black text-white text-lg tracking-tighter">YUJO OS</span></div>
-              <div className="w-9 h-9 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700" onClick={() => setActiveTab('profile')}><img src={currentUser.avatar} className="w-full h-full object-cover"/></div>
+              <div className="flex items-center gap-3">
+                  <div className="relative">
+                      <button 
+                        onClick={() => setIsNotifOpen(!isNotifOpen)}
+                        className="bg-zinc-900 p-2 rounded-full border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600 transition cursor-pointer"
+                      >
+                          <Bell size={18}/>
+                          {announcements.length > 0 && <span className="absolute top-0 right-0 w-2 h-2 bg-emerald-500 border-2 border-black rounded-full"></span>}
+                      </button>
+                      <NotificationCenter currentUser={currentUser} isOpen={isNotifOpen} onClose={() => setIsNotifOpen(false)} />
+                  </div>
+                  <div className="w-9 h-9 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700" onClick={() => setActiveTab('profile')}><img src={currentUser.avatar} className="w-full h-full object-cover"/></div>
+              </div>
           </div>
           <header className="hidden lg:flex justify-between items-end mb-10 relative">
               <div><h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-1">{activeTab.replace('_', ' ')}</h1><p className="text-zinc-500 text-sm font-mono">OPERATOR: {currentUser.displayName.toUpperCase()} // STATUS: ONLINE</p></div>
