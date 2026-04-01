@@ -237,7 +237,7 @@ const NotificationCenter = ({ currentUser, isOpen, onClose }) => {
     const togglePref = async (key) => {
         const newPrefs = { ...preferences, [key]: !preferences[key] };
         setPreferences(newPrefs);
-        await updateDoc(getDocRef(COLLECTION_USERS, currentUser.uid), { notificationPrefs: newPrefs });
+        await updateDoc(doc(db, COLLECTION_USERS, currentUser.uid), { notificationPrefs: newPrefs });
     };
 
     if (!isOpen) return null;
@@ -545,28 +545,25 @@ const GlobalChat = ({ currentUser, users, onClose, onShowProfile }) => {
     ); 
 };
 
-// --- MULTI-VOTE POLL WIDGET (Dynamic 1 or 2 Votes) ---
+// --- MULTI-VOTE POLL WIDGET ---
 const PollWidget = ({ poll, currentUser, logActivity, isAdmin, onDelete, moviePool }) => {
     if (!poll) return null;
 
-    // Safely parse options and voters to prevent rendering errors
     const options = poll.options || [];
     const optionsWithVoters = options.map(opt => ({ ...opt, voters: opt.voters || [] }));
     const totalVotes = optionsWithVoters.reduce((acc, opt) => acc + (opt.votes || 0), 0);
 
-    // Calculate max votes (default to 1 if it's an older poll)
     const maxVotes = poll.maxVotes || 1;
 
     const userVotedOptions = optionsWithVoters.filter(opt => opt.voters.includes(currentUser.uid));
     const userVoteCount = userVotedOptions.length;
     const hasReachedLimit = userVoteCount >= maxVotes;
 
+    const maxOptionVotes = Math.max(...optionsWithVoters.map(o => o.votes), 1);
+
     const handleVote = async (index) => {
         const option = optionsWithVoters[index];
         const isCurrentlyVoted = option.voters.includes(currentUser.uid);
-
-        // Block if trying to exceed their specific vote limit
-        if (!isCurrentlyVoted && hasReachedLimit) return;
 
         const newOptions = [...optionsWithVoters];
         let newVotedBy = [...(poll.votedBy || [])];
@@ -580,6 +577,15 @@ const PollWidget = ({ poll, currentUser, logActivity, isAdmin, onDelete, moviePo
             }
         } else {
             // Vote
+            if (hasReachedLimit) {
+                // Auto-switch: Remove their oldest vote to make room
+                const optionToUnvoteIndex = newOptions.findIndex(opt => opt.voters.includes(currentUser.uid));
+                if (optionToUnvoteIndex !== -1) {
+                    newOptions[optionToUnvoteIndex].voters = newOptions[optionToUnvoteIndex].voters.filter(id => id !== currentUser.uid);
+                    newOptions[optionToUnvoteIndex].votes = Math.max(0, newOptions[optionToUnvoteIndex].votes - 1);
+                }
+            }
+            
             newOptions[index].voters.push(currentUser.uid);
             newOptions[index].votes += 1;
             if (!newVotedBy.includes(currentUser.uid)) {
@@ -621,29 +627,38 @@ const PollWidget = ({ poll, currentUser, logActivity, isAdmin, onDelete, moviePo
 
             <div className="space-y-3 relative z-10 flex-1 overflow-y-auto custom-scrollbar pr-1 max-h-[400px]">
                 {optionsWithVoters.map((opt, idx) => {
-                    const percentage = totalVotes === 0 ? 0 : Math.round((opt.votes / totalVotes) * 100);
+                    const fillPercentage = opt.votes === 0 ? 0 : Math.round((opt.votes / maxOptionVotes) * 100);
                     const isCurrentlyVoted = opt.voters.includes(currentUser.uid);
-                    const isDisabled = !isCurrentlyVoted && hasReachedLimit;
                     
-                    // Match to movie pool if needed for the image fallback
                     const matchedMovie = moviePool?.find(m => m.title === opt.text || m.id === opt.movieId);
-                    // DONT USE opt.image as it might exceed size limit, use matchedMovie.poster
                     const displayImage = matchedMovie?.poster;
+                    
+                    // Calculate Rating
+                    let displayRating = '';
+                    if (matchedMovie) {
+                        const ratings = matchedMovie.ratings || {};
+                        const values = Object.values(ratings);
+                        if (values.length > 0) {
+                            const sum = values.reduce((a, b) => a + b, 0);
+                            displayRating = `${(sum / values.length).toFixed(1)}/5 (Clan)`;
+                        } else if (matchedMovie.rating) {
+                            displayRating = `${matchedMovie.rating}/10 (Base)`;
+                        } else {
+                            displayRating = 'UNRATED';
+                        }
+                    }
                     
                     return (
                         <button 
                             key={idx}
                             onClick={() => handleVote(idx)}
-                            disabled={isDisabled}
                             className={`w-full relative h-16 rounded-xl overflow-hidden border transition-all text-left ${
                                 isCurrentlyVoted 
                                     ? 'border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.15)] ring-1 ring-purple-500' 
-                                    : isDisabled
-                                        ? 'border-zinc-800 opacity-50 cursor-not-allowed'
-                                        : 'border-zinc-700 hover:border-zinc-500 cursor-pointer active:scale-[0.98]'
+                                    : 'border-zinc-700 hover:border-zinc-500 cursor-pointer active:scale-[0.98]'
                             }`}
                         >
-                            <div className={`absolute top-0 left-0 bottom-0 transition-all duration-1000 ${isCurrentlyVoted ? 'bg-purple-600/30' : 'bg-zinc-800/80'}`} style={{ width: `${percentage}%` }}></div>
+                            <div className={`absolute top-0 left-0 bottom-0 transition-all duration-1000 ${isCurrentlyVoted ? 'bg-purple-600/30' : 'bg-zinc-800/80'}`} style={{ width: `${fillPercentage}%` }}></div>
                             <div className="absolute inset-0 flex justify-between items-center px-3 py-2">
                                 <div className="flex items-center gap-3 flex-1 min-w-0 pr-4 h-full">
                                     {displayImage && (
@@ -651,10 +666,17 @@ const PollWidget = ({ poll, currentUser, logActivity, isAdmin, onDelete, moviePo
                                             <img src={displayImage} alt="poster" className="w-full h-full object-cover" />
                                         </div>
                                     )}
-                                    <span className={`font-bold text-sm truncate ${isCurrentlyVoted ? 'text-white' : 'text-zinc-300'}`}>{opt.text}</span>
+                                    <div className="flex flex-col items-start justify-center min-w-0">
+                                        <span className={`font-bold text-sm truncate w-full text-left ${isCurrentlyVoted ? 'text-white' : 'text-zinc-300'}`}>{opt.text}</span>
+                                        {displayRating && (
+                                            <span className="text-[9px] text-yellow-500 font-mono font-bold flex items-center gap-1 mt-0.5">
+                                                <Star size={8} fill="currentColor" /> {displayRating}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-3 bg-zinc-900/40 pl-3 py-1 rounded-l-lg shadow-inner">
-                                    <span className="text-xs font-mono font-bold text-zinc-400">{percentage}%</span>
+                                <div className="flex items-center gap-3 bg-zinc-900/40 px-3 py-1 rounded-lg shadow-inner">
+                                    <span className="text-xs font-mono font-bold text-zinc-400">{opt.votes} {opt.votes === 1 ? 'Vote' : 'Votes'}</span>
                                     {isCurrentlyVoted && <CheckCircle size={16} className="text-purple-400"/>}
                                 </div>
                             </div>
@@ -665,7 +687,7 @@ const PollWidget = ({ poll, currentUser, logActivity, isAdmin, onDelete, moviePo
             {hasReachedLimit && (
                 <div className="mt-4 text-center animate-in fade-in relative z-10">
                      <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest flex items-center justify-center gap-1">
-                        <CheckCircle size={12}/> Voting Limit Reached (Tap to retract)
+                        <CheckCircle size={12}/> Voting Limit Reached (Tap another to switch)
                      </span>
                 </div>
             )}
@@ -797,8 +819,8 @@ const AnnouncementCard = ({ announcements, isAdmin, logActivity }) => {
     );
 };
 
-const MovieDisplayWidget = ({ screening, onRate, currentUser, vaultRatings }) => {
-  const existingRatings = vaultRatings || {};
+const MovieDisplayWidget = ({ screening, onRate, currentUser, vaultMovie }) => {
+  const existingRatings = vaultMovie?.ratings || {};
   const initialUserRating = existingRatings[currentUser.uid] || 0;
   
   const calculateAverage = (ratings) => {
@@ -808,8 +830,10 @@ const MovieDisplayWidget = ({ screening, onRate, currentUser, vaultRatings }) =>
      return (sum / values.length).toFixed(1);
   };
   
-  const avgRating = calculateAverage(existingRatings);
+  const clanAvg = calculateAverage(existingRatings);
   const totalRaters = Object.keys(existingRatings).length;
+  
+  const displayRating = totalRaters > 0 ? `${clanAvg}/5` : (vaultMovie?.rating ? `${vaultMovie.rating}/10` : 'UNRATED');
 
   const bgImage = screening.image || `https://source.unsplash.com/random/800x600/?cinema,movie,dark`;
 
@@ -830,13 +854,17 @@ const MovieDisplayWidget = ({ screening, onRate, currentUser, vaultRatings }) =>
                       size={18} 
                       color="text-yellow-400"
                   />
-                  <span className="text-[8px] text-zinc-500 mt-1">{totalRaters > 0 ? `AVG: ${avgRating}/5` : 'BE THE FIRST'}</span>
+                  <span className="text-[8px] text-zinc-500 mt-1">{displayRating}</span>
               </div>
           </div>
           <h2 className="text-4xl lg:text-5xl font-black text-white mt-4 mb-2 drop-shadow-xl leading-tight">{screening.title}</h2>
           <div className="flex items-center gap-3 text-purple-300 font-mono text-sm mb-4 bg-black/40 w-fit px-3 py-1 rounded-lg border border-white/10 backdrop-blur-md">
              <Clock size={14}/> <span>{screening.time}</span>
-             {totalRaters > 0 && <span className="ml-2 pl-2 border-l border-white/20 text-emerald-400 text-[10px] uppercase font-bold tracking-wider">Rated by {totalRaters} Agent{totalRaters !== 1 && 's'}</span>}
+             {totalRaters > 0 ? (
+                 <span className="ml-2 pl-2 border-l border-white/20 text-emerald-400 text-[10px] uppercase font-bold tracking-wider">Rated by {totalRaters} Agent{totalRaters !== 1 && 's'}</span>
+             ) : (
+                 <span className="ml-2 pl-2 border-l border-white/20 text-amber-400 text-[10px] uppercase font-bold tracking-wider">Vault Rating: {vaultMovie?.rating || 'N/A'}</span>
+             )}
           </div>
           <p className="text-zinc-300 text-sm leading-relaxed max-w-lg line-clamp-3">{screening.desc}</p>
        </div>
@@ -973,7 +1001,7 @@ const CinemaControlPage = ({ screenings, moviePool, isAdmin, logActivity, curren
 
     const executeCreatePoll = async () => {
         try {
-            // REMOVED image base64 from options to prevent exceeding the 1MB limit.
+            // FIX: Remove image base64 from options to prevent 1MB limit error
             const options = pollSelection.map(m => ({ text: m.title, movieId: m.id, votes: 0, voters: [] }));
             await addDoc(getCollectionRef(COLLECTION_POLLS), { 
                 question: `Which movie for Friday Night? (Select up to ${pollMaxVotes})`, 
@@ -1034,7 +1062,9 @@ const CinemaControlPage = ({ screenings, moviePool, isAdmin, logActivity, curren
             <div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                     {moviePool.map(m => {
-                        const avgRating = getAvgRating(m.ratings);
+                        const clanAvg = getAvgRating(m.ratings);
+                        const totalRaters = Object.keys(m.ratings || {}).length;
+                        const displayAvg = totalRaters > 0 ? `${clanAvg}/5 (Clan)` : `${m.rating || 'N/A'}/10 (Base)`;
                         const isSelectedForPoll = pollSelection.find(pm => pm.id === m.id);
                         return (
                             <div key={m.id} className={`group relative aspect-[2/3] bg-zinc-900 rounded-2xl overflow-hidden border transition-all hover:-translate-y-2 shadow-lg ${isSelectedForPoll ? 'border-purple-500 ring-2 ring-purple-500/50' : 'border-zinc-800 hover:border-purple-500/50'}`}>
@@ -1046,7 +1076,7 @@ const CinemaControlPage = ({ screenings, moviePool, isAdmin, logActivity, curren
                                         <p className="text-[10px] text-zinc-400 mb-3 uppercase tracking-wide">{m.year} • {m.genre}</p>
                                         <div className="flex items-center justify-between">
                                             <div className="flex flex-col">
-                                                <span className="text-[9px] text-zinc-500 font-mono">Avg: {avgRating}/5</span>
+                                                <span className="text-[9px] text-zinc-400 font-mono bg-black/50 px-1.5 py-0.5 rounded">{displayAvg}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -1895,13 +1925,12 @@ const App = () => {
                                     if (!vaultMovie) {
                                        vaultMovie = moviePool.find(m => m.title === scr.title);
                                     }
-                                    const ratings = vaultMovie ? vaultMovie.ratings : {};
                                     
                                     return (
                                         <div key={scr.id} className="relative group">
                                              <MovieDisplayWidget 
                                                screening={scr} 
-                                               vaultRatings={ratings}
+                                               vaultMovie={vaultMovie}
                                                onRate={handleDashboardRate}
                                                currentUser={currentUser}
                                              />
