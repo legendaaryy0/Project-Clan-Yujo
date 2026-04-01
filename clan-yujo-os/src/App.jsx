@@ -642,7 +642,7 @@ const PollWidget = ({ poll, currentUser, logActivity, isAdmin, onDelete, moviePo
                             const sum = values.reduce((a, b) => a + b, 0);
                             displayRating = `${(sum / values.length).toFixed(1)}/5 (Clan)`;
                         } else if (matchedMovie.rating) {
-                            displayRating = `${matchedMovie.rating}/10 (Base)`;
+                            displayRating = `${matchedMovie.rating}/5 (Base)`;
                         } else {
                             displayRating = 'UNRATED';
                         }
