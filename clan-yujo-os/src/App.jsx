@@ -363,7 +363,7 @@ const LoginScreen = ({ onLogin, isAuthReady }) => {
                     <form onSubmit={handleRegister} className="space-y-5 animate-in fade-in slide-in-from-bottom-4"> 
                         <div className="space-y-1"><label className="text-xs font-bold text-zinc-500 ml-2 uppercase">Identity</label><input type="text" required className="w-full bg-black/50 border border-zinc-800 rounded-xl p-4 text-white outline-none focus:border-emerald-500 transition" placeholder="Full Name" value={regData.name} onChange={(e) => setRegData({...regData, name: e.target.value})}/></div> 
                         <div className="space-y-1"><label className="text-xs font-bold text-zinc-500 ml-2 uppercase">Clan Code</label><input type="text" required className="w-full bg-black/50 border border-zinc-800 rounded-xl p-4 text-white outline-none focus:border-emerald-500 transition" placeholder="Enter Code" value={regData.accessCode} onChange={(e) => setRegData({...regData, accessCode: e.target.value})}/></div> 
-                        <div className="text-xs text-zinc-600 text-center">Codes: MINAT02025 (Admin), AKIRA2025 (Staff), TEMP2025 (Guest)</div>
+                        <div className="text-xs text-zinc-600 text-center">Welcome</div>
                         {error && <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl flex items-center gap-3 text-red-400 text-xs"><AlertCircle size={16} /> {error}</div>} 
                         <button disabled={loading || !isAuthReady} className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold py-4 rounded-xl shadow-xl mt-4 transition-all hover:scale-[1.02]">{loading ? 'PROCESSING...' : 'JOIN THE CLAN'}</button> 
                     </form> 
